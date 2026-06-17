@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package ethercat_drone.mission.v1;
+
+service MissionService {
+  rpc LoadMission(MissionConfig) returns (MissionStatus);
+  rpc StartMission(Empty) returns (MissionStatus);
+  rpc PauseMission(Empty) returns (MissionStatus);
+  rpc ResumeMission(Empty) returns (MissionStatus);
+  rpc CancelMission(Empty) returns (MissionStatus);
+  rpc GetMissionStatus(Empty) returns (MissionStatus);
+  rpc StreamMissionProgress(Empty) returns (stream MissionProgress);
+}
+
+message Empty {}
+
+message MissionConfig {
+  string mission_id = 1;
+  repeated FlightLeg legs = 2;
+}
+
+message FlightLeg {
+  string name = 1;
+  float target_latitude = 2;
+  float target_longitude = 3;
+  float target_altitude = 4;
+  float target_heading = 5;
+  float max_speed = 6;
+  string criterion = 7;
+  float arrival_radius = 8;
+  float dwell_time_seconds = 9;
+  bool has_action = 10;
+  string action_name = 11;
+}
+
+message MissionStatus {
+  string mission_id = 1;
+  string state = 2;
+  int32 current_leg_index = 3;
+  float mission_progress = 4;
+  string current_leg_name = 5;
+  string error_message = 6;
+}
+
+message MissionProgress {
+  int32 leg_index = 1;
+  string leg_name = 2;
+  float leg_progress = 3;
+  float distance_to_target = 4;
+  float current_altitude = 5;
+  float current_speed = 6;
+  int64 timestamp_ns = 7;
+}
