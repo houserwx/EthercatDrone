@@ -48,7 +48,8 @@ public:
     void freeze() noexcept;
 
     // RT tick — evaluate all leg rules
-    void tick(WrapperPool& pool, const common::math::Vec3f& currentPosition,
+    // WrapperPool is reserved for gRPC action polling (Phase 2).
+    void tick(const common::math::Vec3f& currentPosition,
               float currentAltitude, uint64_t nowNs) noexcept;
 
     [[nodiscard]] bool shouldAdvanceLeg(int legIdx) const noexcept;

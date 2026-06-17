@@ -25,8 +25,7 @@ void MissionEvaluator::freeze() noexcept
 // ============================================================================
 // tick — evaluate all leg criteria every RT cycle
 // ============================================================================
-void MissionEvaluator::tick(WrapperPool& /*pool*/,
-                            const common::math::Vec3f& currentPosition,
+void MissionEvaluator::tick(const common::math::Vec3f& currentPosition,
                             float currentAltitude,
                             uint64_t nowNs) noexcept
 {
