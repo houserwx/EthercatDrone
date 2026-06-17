@@ -2,6 +2,8 @@
 
 #include "fc/safety/AlwaysOnEval.h"
 #include "fc/safety/LineMonitor.h"
+#include "fc/app/FunctionEvaluator.h"
+#include "fc/app/WrapperPool.h"
 #include "fc/pdo/HardwareRegistry.h"
 #include "fc/grpc/GrpcAdapter.h"
 
@@ -60,6 +62,16 @@ private:
     std::string displayName_;
     std::atomic<bool> running_{false};
     fc::grpc::GrpcAdapter* grpcAdapter_{nullptr};
+
+    // Per-segment hardware vocabulary (default-constructed with reasonable sizes)
+    WrapperPool pool_{std::string_view{"default"}, 8, 4, 0, 0, 0, 0, 0, 0};
+
+    // Safety evaluators
+    fc::safety::AlwaysOnEval alwaysOnEval_;
+    fc::safety::LineMonitor lineMonitor_;
+
+    // Function evaluator (station triggers, actions, etc.)
+    FunctionEvaluator functionEvaluator_;
 };
 
 } // namespace fc::app

@@ -1,6 +1,7 @@
 #include "common/log/Logger.h"
 #include "common/messages/Message.h"
 #include "common/rt/ThreadBuffer.h"
+#include "common/rt/SignalProcess.h"
 
 #include <chrono>
 #include <cstring>
@@ -117,17 +118,34 @@ void Logger::formatAndOutput(const messages::LogEntry& entry) const
     }
 }
 
+// Thread-local pointer to this thread's SPSC buffer.
+// Set by threadLoggerInit(), read by log().
+static thread_local common::ThreadBuffer* gThreadBuffer = nullptr;
+
 bool threadLoggerInit(bool isRt)
 {
     common::ThreadBuffer* buf = Logger::instance().registerThread(isRt);
+    if (buf) {
+        gThreadBuffer = buf;
+    }
     return buf != nullptr;
 }
 
 void log(messages::LogLevel level, messages::MessageId id,
          int64_t p1, int64_t p2, int64_t p3) noexcept
 {
-    // TODO: get thread-local buffer and push entry
-    (void)level; (void)id; (void)p1; (void)p2; (void)p3;
+    common::ThreadBuffer* buf = gThreadBuffer;
+    if (!buf) return;  // Thread not registered — drop entry
+
+    messages::LogEntry entry;
+    entry.level = level;
+    entry.id = id;
+    entry.timestampNs = common::rt::signalProcessNowNs();
+    entry.p1 = p1;
+    entry.p2 = p2;
+    entry.p3 = p3;
+
+    buf->tryPush(entry);  // Lock-free, noexcept, drops on overflow
 }
 
 } // namespace common::log

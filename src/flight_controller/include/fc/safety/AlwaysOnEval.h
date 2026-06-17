@@ -3,9 +3,13 @@
 #include <array>
 #include <cstdint>
 
+namespace fc::app {
+class WrapperPool;
+}
+
 namespace fc::safety {
 
-class WrapperPool;
+using WrapperPool = fc::app::WrapperPool;
 
 inline constexpr std::size_t MaxAlwaysOnRules = 16;
 

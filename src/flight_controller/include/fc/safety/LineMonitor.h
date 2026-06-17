@@ -7,9 +7,13 @@
 #include <string>
 #include <vector>
 
+namespace fc::app {
+class WrapperPool;
+}
+
 namespace fc::safety {
 
-class WrapperPool;
+using WrapperPool = fc::app::WrapperPool;
 
 // ---------------------------------------------------------------------------
 // MonitorType — tagged discriminant for switch dispatch.
