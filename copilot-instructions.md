@@ -224,6 +224,7 @@ class WrapperPool final {
 | IMUWrapper | Gyro + Accel (6 axes) | IMU_GyroX/Y/Z, IMU_AccelX/Y/Z |
 | MagnetometerWrapper | Magnetic field (3 axes) | MagnetometerX/Y/Z |
 | BarometerWrapper | Pressure + Altitude | Barometer |
+| GPSWrapper | GPS position, altitude, heading, fix quality | GPS_Latitude/Longitude/Altitude/Heading/FixQuality |
 
 ---
 
@@ -249,6 +250,11 @@ enum class EntryType : uint8_t {
     MagnetometerY = 14,
     MagnetometerZ = 15,
     Barometer     = 16,
+    GPS_Latitude  = 17,
+    GPS_Longitude = 18,
+    GPS_Altitude  = 19,
+    GPS_Heading   = 20,
+    GPS_FixQuality = 21,
 };
 ```
 
@@ -297,7 +303,8 @@ src/flight_controller/
 │   ├── safety/           # AlwaysOnEval, LineMonitor, MachineStateController
 │   ├── motor/            # MotorController
 │   ├── grpc/             # GrpcAdapter
-│   └── services/         # GrpcService, gRPC implementations
+│   ├── services/         # GrpcService, gRPC implementations
+│   └── mission/          # MissionQueue, MissionEvaluator, MissionStatePDO, FlightLeg
 └── src/                  # Corresponding .cpp files (wrappers are header-only)
 ```
 
@@ -312,6 +319,7 @@ src/flight_controller/
 - `fc::safety` — Safety evaluators
 - `fc::ethercat`, `fc::i2c`, `fc::spi` — Backend adapters
 - `fc::sensor` — Sensor catalog
+- `fc::mission` — Mission planning (MissionQueue, MissionEvaluator, FlightLeg)
 - `common::rt` — Real-time utilities (Threadrunner, SignalProcess)
 - `common::math` — Math types (Vec3f, etc.)
 - `common::log` — Logging
@@ -367,3 +375,71 @@ The CIVControl-ARM reference codebase at `externalReferences/20260615-182435/CIV
   - `fc` — depends on `common`, `imu`
   - `navi` — depends on `fc`
   - `drone_app` — depends on `fc`, `navi`
+  - `bench_test` — depends on `fc` (simulated bench test)
+  - `mission_bench_test` — depends on `fc` (mission simulation)
+
+---
+
+## 13.0 Mission Planning Architecture
+
+### Conceptual Mapping
+The mission planning system reuses the manufacturing control architecture:
+- **Conveyor Line** → Flight Path / Mission Route
+- **Station** → Waypoint / Leg / Mission Phase
+- **Product in Queue** → Drone itself (mission state)
+- **Station Trigger** → Reach waypoint or enter geofence
+- **Station Result (gRPC)** → Vision check, payload action, sensor confirmation
+- **Rules Engine (AlwaysOnEval)** → Safety, contingency, leg transition rules
+
+### MissionQueue Lifecycle
+1. `MissionQueue::loadFromJson(path)` — parses mission JSON, populates `FlightLeg` vector
+2. `mission->freeze()` — shrinks storage, marks RT-ready
+3. RT path: `mission->currentLegIndex()`, `mission->leg(idx)`, `mission->advanceLeg()` — all `noexcept`, O(1)
+
+### FlightLeg Data Model
+```cpp
+struct FlightLeg {
+    std::string   name;
+    std::string   uuid;
+    common::math::Vec3f targetPosition;  // GPS or local ENU
+    float         targetAltitude;        // MSL altitude (m)
+    float         targetHeading;         // Degrees true
+    float         maxSpeed;              // m/s
+    LegCriterion  criterion;             // PositionReached, AltitudeReached, TimeElapsed, ImageMatch, ManualAck, Always
+    float         arrivalRadius;         // meters
+    float         dwellTimeSeconds;      // minimum hold time
+    uint64_t      timeoutNs;             // max time for this leg
+    bool          hasAction;             // gRPC action at waypoint
+    int           msgOutIdx, msgInIdx;   // WrapperPool message indices
+};
+```
+
+### MissionEvaluator RT Tick Pattern
+```cpp
+// Every RT cycle:
+evaluator.tick(currentPosition, currentAltitude, nowNs);
+
+if (evaluator.shouldAdvanceLeg(mission->currentLegIndex())) {
+    mission->advanceLeg();
+}
+```
+
+- Uses `switch(LegCriterion)` dispatch (no virtual calls)
+- Position comparison: horizontal distance via `sqrt(dx*dx + dy*dy)`
+- Dwell time: `nowNs - enterTimeNs > dwellSeconds * 1e9`
+- Timeout fallback: advance on timeout (never hang)
+
+### GPS Integration Pattern
+- GPS is a **device on the other side of a backend** (UART NMEA, SPI, or I2C), NOT a backend itself
+- GPS data flows: Backend reads raw data → writes into PDO image → `GPSWrapper` provides typed access
+- `GPSWrapper` holds 5 `PDOEntry&` references (latitude, longitude, altitude, heading, fixQuality)
+- Entry types: `GPS_Latitude`, `GPS_Longitude`, `GPS_Altitude`, `GPS_Heading`, `GPS_FixQuality`
+
+### Mission State Machine
+Extended `MachineState` enum includes mission states:
+`Idle → Arming → MissionReady → Flying → Holding → RTL → Landing → Landed → MissionComplete`
+
+### Mission gRPC Service
+`mission_service.proto` defines:
+- `LoadMission`, `StartMission`, `PauseMission`, `ResumeMission`, `CancelMission`
+- `GetMissionStatus`, `StreamMissionProgress` (server-streaming)
