@@ -15,7 +15,7 @@ namespace fc::wrapper {
 
 class BarometerWrapper final {
 public:
-    BarometerWrapper(std::string name, PDOEntry& pressureEntry) noexcept
+    BarometerWrapper(std::string name, fc::pdo::PDOEntry& pressureEntry) noexcept
         : name_(std::move(name))
         , pressure_(pressureEntry)
     {}
@@ -32,7 +32,7 @@ public:
 
 private:
     std::string name_;
-    PDOEntry& pressure_;
+    fc::pdo::PDOEntry& pressure_;
 };
 
 } // namespace fc::wrapper

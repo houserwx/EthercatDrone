@@ -23,7 +23,7 @@ namespace fc::wrapper {
 // ------------------------------------------------------------
 class MessageOutWrapper final {
 public:
-    MessageOutWrapper(std::string name, PDOEntry& entry) noexcept
+    MessageOutWrapper(std::string name, fc::pdo::PDOEntry& entry) noexcept
         : name_(std::move(name)), entry_(entry) {}
 
     [[nodiscard]] const std::string& getName() const noexcept { return name_; }
@@ -40,7 +40,7 @@ public:
 
 private:
     std::string name_;
-    PDOEntry&   entry_;
+    fc::pdo::PDOEntry&   entry_;
 };
 
 // ------------------------------------------------------------
@@ -48,7 +48,7 @@ private:
 // ------------------------------------------------------------
 class MessageInWrapper final {
 public:
-    MessageInWrapper(std::string name, PDOEntry& entry) noexcept
+    MessageInWrapper(std::string name, fc::pdo::PDOEntry& entry) noexcept
         : name_(std::move(name)), entry_(entry) {}
 
     [[nodiscard]] const std::string& getName() const noexcept { return name_; }
@@ -68,7 +68,7 @@ public:
 
 private:
     std::string name_;
-    PDOEntry&   entry_;
+    fc::pdo::PDOEntry&   entry_;
 };
 
 } // namespace fc::wrapper

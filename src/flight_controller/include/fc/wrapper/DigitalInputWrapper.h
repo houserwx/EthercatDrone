@@ -19,7 +19,7 @@ namespace fc::wrapper {
 
 class DigitalInputWrapper final {
 public:
-    DigitalInputWrapper(std::string name, PDOEntry& entry) noexcept
+    DigitalInputWrapper(std::string name, fc::pdo::PDOEntry& entry) noexcept
         : name_(std::move(name)), entry_(entry) {}
 
     [[nodiscard]] const std::string& getName() const noexcept { return name_; }
@@ -29,7 +29,7 @@ public:
 
 private:
     std::string name_;
-    PDOEntry&   entry_;  // stable after HardwareRegistry::freezeForRt()
+    fc::pdo::PDOEntry&   entry_;  // stable after HardwareRegistry::freezeForRt()
 };
 
 } // namespace fc::wrapper

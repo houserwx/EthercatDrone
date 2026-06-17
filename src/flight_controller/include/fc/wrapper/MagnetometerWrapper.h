@@ -17,7 +17,7 @@ namespace fc::wrapper {
 class MagnetometerWrapper final {
 public:
     MagnetometerWrapper(std::string name,
-                        PDOEntry& magXEntry, PDOEntry& magYEntry, PDOEntry& magZEntry) noexcept
+                        fc::pdo::PDOEntry& magXEntry, fc::pdo::PDOEntry& magYEntry, fc::pdo::PDOEntry& magZEntry) noexcept
         : name_(std::move(name))
         , magX_(magXEntry), magY_(magYEntry), magZ_(magZEntry)
     {}
@@ -38,9 +38,9 @@ public:
 
 private:
     std::string name_;
-    PDOEntry& magX_;
-    PDOEntry& magY_;
-    PDOEntry& magZ_;
+    fc::pdo::PDOEntry& magX_;
+    fc::pdo::PDOEntry& magY_;
+    fc::pdo::PDOEntry& magZ_;
 };
 
 } // namespace fc::wrapper

@@ -8,6 +8,7 @@
 #include "fc/wrapper/IMUWrapper.h"
 #include "fc/wrapper/MagnetometerWrapper.h"
 #include "fc/wrapper/BarometerWrapper.h"
+#include "fc/wrapper/GPSWrapper.h"
 
 #include <string>
 #include <string_view>
@@ -60,7 +61,8 @@ public:
                 int expectedAnalogOutCount = 0,
                 int expectedIMUCount     = 0,
                 int expectedMagCount     = 0,
-                int expectedBaroCount    = 0)
+                int expectedBaroCount    = 0,
+                int expectedGPSCount     = 0)
         : name_(segmentName)
     {
         outputs_.reserve(static_cast<std::size_t>(expectedOutputCount));
@@ -72,6 +74,7 @@ public:
         imus_.reserve(static_cast<std::size_t>(expectedIMUCount));
         magnetometers_.reserve(static_cast<std::size_t>(expectedMagCount));
         barometers_.reserve(static_cast<std::size_t>(expectedBaroCount));
+        gps_.reserve(static_cast<std::size_t>(expectedGPSCount));
     }
 
     // -----------------------------------------------------------------------
@@ -156,6 +159,17 @@ public:
         return idx;
     }
 
+    /// Register a GPS wrapper. Returns stable index.
+    [[nodiscard]] int addGPS(std::string name,
+                             fc::pdo::PDOEntry& latitude, fc::pdo::PDOEntry& longitude,
+                             fc::pdo::PDOEntry& altitude, fc::pdo::PDOEntry& heading,
+                             fc::pdo::PDOEntry& fixQuality)
+    {
+        const int idx = static_cast<int>(gps_.size());
+        gps_.emplace_back(std::move(name), latitude, longitude, altitude, heading, fixQuality);
+        return idx;
+    }
+
     // -----------------------------------------------------------------------
     // freeze() — called after all wrappers have been registered and
     // before the RT thread starts.  Releases excess capacity.  No allocation
@@ -172,6 +186,7 @@ public:
         imus_.shrink_to_fit();
         magnetometers_.shrink_to_fit();
         barometers_.shrink_to_fit();
+        gps_.shrink_to_fit();
         frozen_ = true;
     }
 
@@ -198,6 +213,8 @@ public:
     [[nodiscard]] const fc::wrapper::MagnetometerWrapper&  magnetometer (int idx) const noexcept { return magnetometers_[static_cast<std::size_t>(idx)]; }
     [[nodiscard]]       fc::wrapper::BarometerWrapper&     barometer    (int idx)       noexcept { return barometers_ [static_cast<std::size_t>(idx)]; }
     [[nodiscard]] const fc::wrapper::BarometerWrapper&     barometer    (int idx) const noexcept { return barometers_ [static_cast<std::size_t>(idx)]; }
+    [[nodiscard]]       fc::wrapper::GPSWrapper&           gps          (int idx)       noexcept { return gps_        [static_cast<std::size_t>(idx)]; }
+    [[nodiscard]] const fc::wrapper::GPSWrapper&           gps          (int idx) const noexcept { return gps_        [static_cast<std::size_t>(idx)]; }
 
     // -----------------------------------------------------------------------
     // Size queries (init/diagnostic use only)
@@ -211,6 +228,7 @@ public:
     [[nodiscard]] int imuCount()          const noexcept { return static_cast<int>(imus_.size());    }
     [[nodiscard]] int magnetometerCount() const noexcept { return static_cast<int>(magnetometers_.size()); }
     [[nodiscard]] int barometerCount()    const noexcept { return static_cast<int>(barometers_.size()); }
+    [[nodiscard]] int gpsCount()          const noexcept { return static_cast<int>(gps_.size()); }
 
     // -----------------------------------------------------------------------
     // Machine state controller — injected by Application::addQueue() after
@@ -246,6 +264,7 @@ private:
     std::vector<fc::wrapper::IMUWrapper>            imus_;
     std::vector<fc::wrapper::MagnetometerWrapper>   magnetometers_;
     std::vector<fc::wrapper::BarometerWrapper>      barometers_;
+    std::vector<fc::wrapper::GPSWrapper>            gps_;
 
     // Machine state controller — injected post-construction.
     MachineStateController* stateMachine_{nullptr};

@@ -15,6 +15,7 @@ class ProductBuffer;
 // FunctionType — tagged discriminant for switch dispatch.
 // ---------------------------------------------------------------------------
 enum class FunctionType : uint8_t {
+    // Manufacturing functions
     Detect,
     StationTrigger,
     Resync,
@@ -28,6 +29,12 @@ enum class FunctionType : uint8_t {
     MotorMix,
     AttitudeHold,
     HealthMonitor,
+    // Mission functions
+    LegTransition,       // Check if current leg is complete → advance
+    WaypointAction,      // Trigger gRPC action at waypoint
+    PositionHold,        // Maintain position during dwell time
+    RTLTrigger,          // Initiate return-to-launch
+    LandingSequence,     // Execute landing procedure
 };
 
 FunctionType functionTypeFromString(const std::string& s);

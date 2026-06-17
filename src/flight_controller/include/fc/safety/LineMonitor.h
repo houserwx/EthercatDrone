@@ -15,6 +15,7 @@ class WrapperPool;
 // MonitorType — tagged discriminant for switch dispatch.
 // ---------------------------------------------------------------------------
 enum class MonitorType : uint8_t {
+    // Manufacturing monitors
     Rate,
     Spacing,
     Width,
@@ -22,7 +23,18 @@ enum class MonitorType : uint8_t {
     Speed,
     DwellTime,
     DetectHealth,
-    EncoderHealth
+    EncoderHealth,
+    // Flight monitors
+    AltitudeMin,          // Below minimum safe altitude
+    AltitudeMax,          // Above maximum altitude
+    AirspeedMin,          // Below minimum airspeed
+    AirspeedMax,          // Above maximum airspeed
+    BatteryVoltage,       // Below cutoff voltage
+    GpsFixQuality,        // Lost GPS fix or dilution too high
+    AttitudeRollLimit,    // Exceeds maximum roll angle
+    AttitudePitchLimit,   // Exceeds maximum pitch angle
+    MotorRpmDeviation,    // Motor RPM deviates from command
+    HeartbeatTimeout,     // Lost heartbeat from ground station
 };
 
 // ---------------------------------------------------------------------------

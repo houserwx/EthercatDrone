@@ -29,6 +29,10 @@ set(FC_SOURCES
     src/app/Application.cpp
     src/app/Queue.cpp
     src/app/FunctionEvaluator.cpp
+    # Mission planning
+    src/mission/MissionQueue.cpp
+    src/mission/MissionEvaluator.cpp
+    src/mission/MissionStatePDO.cpp
     # Services
     src/services/GrpcService.cpp
 )

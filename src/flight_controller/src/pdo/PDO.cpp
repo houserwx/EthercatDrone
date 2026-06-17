@@ -47,6 +47,17 @@ void PDOEntry::read() noexcept
             baroAltitudeVal_ = altitude;
             break;
         }
+        // GPS sensor types — read float values from image buffer
+        case EntryType::GPS_Latitude:   { float v; std::memcpy(&v, image + byteOffset, sizeof(v)); floatVal_ = v; break; }
+        case EntryType::GPS_Longitude:  { float v; std::memcpy(&v, image + byteOffset, sizeof(v)); floatVal_ = v; break; }
+        case EntryType::GPS_Altitude:   { float v; std::memcpy(&v, image + byteOffset, sizeof(v)); floatVal_ = v; break; }
+        case EntryType::GPS_Heading:    { float v; std::memcpy(&v, image + byteOffset, sizeof(v)); floatVal_ = v; break; }
+        case EntryType::GPS_FixQuality: {
+            int16_t raw;
+            std::memcpy(&raw, image + byteOffset, sizeof(raw));
+            adcVal_ = raw;
+            break;
+        }
         default:
             break;
     }

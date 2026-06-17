@@ -1,0 +1,54 @@
+{
+    "missionId": "demo-patrol-001",
+    "displayName": "Demo Patrol Route",
+    "legs": [
+        {
+            "name": "Arm-and-Climb",
+            "uuid": "leg-arm-climb",
+            "targetPosition": [0.0, 0.0, 0.0],
+            "targetAltitude": 15.0,
+            "maxSpeed": 2.0,
+            "criterion": "AltitudeReached",
+            "arrivalRadius": 1.0,
+            "altitudeTolerance": 1.0,
+            "dwellTimeSeconds": 0.0
+        },
+        {
+            "name": "Cruise-North",
+            "uuid": "leg-cruise-north",
+            "targetPosition": [0.0, 100.0, 0.0],
+            "targetAltitude": 30.0,
+            "maxSpeed": 5.0,
+            "criterion": "PositionReached",
+            "arrivalRadius": 5.0,
+            "altitudeTolerance": 2.0,
+            "dwellTimeSeconds": 3.0
+        },
+        {
+            "name": "Inspect-Target",
+            "uuid": "leg-inspect-target",
+            "targetPosition": [50.0, 100.0, 0.0],
+            "targetAltitude": 25.0,
+            "maxSpeed": 2.0,
+            "criterion": "ImageMatch",
+            "arrivalRadius": 3.0,
+            "altitudeTolerance": 2.0,
+            "dwellTimeSeconds": 10.0,
+            "hasAction": true,
+            "actionName": "VisionInspect",
+            "msgOutIdx": 0,
+            "msgInIdx": 1
+        },
+        {
+            "name": "Return-Home",
+            "uuid": "leg-return-home",
+            "targetPosition": [0.0, 0.0, 0.0],
+            "targetAltitude": 10.0,
+            "maxSpeed": 5.0,
+            "criterion": "PositionReached",
+            "arrivalRadius": 2.0,
+            "altitudeTolerance": 1.0,
+            "dwellTimeSeconds": 0.0
+        }
+    ]
+}

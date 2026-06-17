@@ -12,10 +12,21 @@ namespace fc::safety {
 // MachineState — closed set of machine run states.
 // ---------------------------------------------------------------------------
 enum class MachineState : uint8_t {
+    // Manufacturing states
     Running  = 0,
     Faulted  = 1,
     Halted   = 2,
     EStop    = 3,
+    // Mission states
+    Idle            = 4,   // Powered on, no mission loaded
+    Arming          = 5,   // Pre-flight checks, motor arming
+    MissionReady    = 6,   // Armed, awaiting launch command
+    Flying          = 7,   // Active mission execution
+    Holding         = 8,   // Position hold (paused mission)
+    RTL             = 9,   // Return-to-launch
+    Landing         = 10,  // Landing sequence
+    Landed          = 11,  // On ground, motors stopped
+    MissionComplete = 12,  // All legs executed successfully
 };
 
 // ---------------------------------------------------------------------------
@@ -48,6 +59,12 @@ enum class AlarmId : uint8_t {
     kGpsFixLost,
     kAttitudeExceedLimit,
     kAltitudeExceeded,
+    // Mission-specific alarms
+    kLegTimeout,
+    kArrivalMissed,
+    kActionFailed,
+    kWindExceeded,
+    kGeofenceViolation,
 };
 
 constexpr std::size_t MaxAlarmIds = 128;

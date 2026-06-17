@@ -50,6 +50,12 @@ enum class EntryType : uint8_t {
     MagnetometerY = 14,
     MagnetometerZ = 15,
     Barometer     = 16,
+    // GPS sensor types (UART NMEA, SPI, or I2C backends)
+    GPS_Latitude  = 17,
+    GPS_Longitude = 18,
+    GPS_Altitude  = 19,
+    GPS_Heading   = 20,
+    GPS_FixQuality = 21,
 };
 
 // ------------------------------------------------------------
@@ -133,6 +139,10 @@ struct PDOEntry {
     [[nodiscard]] float getBaroPressure() const noexcept { return baroPressureVal_; }
     [[nodiscard]] float getBaroAltitude() const noexcept { return baroAltitudeVal_; }
 
+    // Generic float accessor (used by GPS and any future float-type entries)
+    [[nodiscard]] float getFloat() const noexcept { return floatVal_; }
+    void setFloat(float v) noexcept { floatVal_ = v; }
+
     void setGyroX(float v) noexcept { gyroXVal_ = v; }
     void setGyroY(float v) noexcept { gyroYVal_ = v; }
     void setGyroZ(float v) noexcept { gyroZVal_ = v; }
@@ -163,6 +173,9 @@ private:
     float magZVal_{0.0f};
     float baroPressureVal_{0.0f};
     float baroAltitudeVal_{0.0f};
+
+    // Generic float value (used by GPS and any future float-type entries)
+    float floatVal_{0.0f};
 };
 
 // ------------------------------------------------------------

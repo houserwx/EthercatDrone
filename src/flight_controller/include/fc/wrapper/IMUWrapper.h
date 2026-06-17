@@ -35,8 +35,8 @@ public:
     /// @param accelZEntry  PDOEntry for accelerometer Z axis
     /// @param cal          Calibration parameters (scale + offset)
     IMUWrapper(std::string name,
-               PDOEntry& gyroXEntry, PDOEntry& gyroYEntry, PDOEntry& gyroZEntry,
-               PDOEntry& accelXEntry, PDOEntry& accelYEntry, PDOEntry& accelZEntry,
+               fc::pdo::PDOEntry& gyroXEntry, fc::pdo::PDOEntry& gyroYEntry, fc::pdo::PDOEntry& gyroZEntry,
+               fc::pdo::PDOEntry& accelXEntry, fc::pdo::PDOEntry& accelYEntry, fc::pdo::PDOEntry& accelZEntry,
                const imu::ImuCalibration& cal) noexcept
         : name_(std::move(name))
         , gyroX_(gyroXEntry), gyroY_(gyroYEntry), gyroZ_(gyroZEntry)
@@ -62,12 +62,12 @@ private:
     std::string name_;
 
     // PDOEntry references (resolved at init, stable after freeze).
-    PDOEntry& gyroX_;
-    PDOEntry& gyroY_;
-    PDOEntry& gyroZ_;
-    PDOEntry& accelX_;
-    PDOEntry& accelY_;
-    PDOEntry& accelZ_;
+    fc::pdo::PDOEntry& gyroX_;
+    fc::pdo::PDOEntry& gyroY_;
+    fc::pdo::PDOEntry& gyroZ_;
+    fc::pdo::PDOEntry& accelX_;
+    fc::pdo::PDOEntry& accelY_;
+    fc::pdo::PDOEntry& accelZ_;
 
     const imu::ImuCalibration& cal_;
 };

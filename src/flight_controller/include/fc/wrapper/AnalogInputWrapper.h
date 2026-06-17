@@ -19,17 +19,17 @@ namespace fc::wrapper {
 
 class AnalogInputWrapper final {
 public:
-    AnalogInputWrapper(std::string name, PDOEntry& entry) noexcept
+    AnalogInputWrapper(std::string name, fc::pdo::PDOEntry& entry) noexcept
         : name_(std::move(name)), entry_(entry) {}
 
     [[nodiscard]] const std::string& getName() const noexcept { return name_; }
 
-    // Raw ADC value (int16_t) from the most recent readAll().
+    // Raw ADC value (0-4095 for 12-bit ADC).
     [[nodiscard]] int16_t rawAdc() const noexcept { return entry_.getRawAdc(); }
 
 private:
     std::string name_;
-    PDOEntry&   entry_;  // stable after HardwareRegistry::freezeForRt()
+    fc::pdo::PDOEntry&   entry_;  // stable after HardwareRegistry::freezeForRt()
 };
 
 } // namespace fc::wrapper
