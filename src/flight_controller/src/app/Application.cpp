@@ -62,6 +62,51 @@ void Application::addQueue(std::unique_ptr<Queue> q)
     queues_.push_back(std::move(q));
 }
 
+void Application::setMission(std::unique_ptr<fc::mission::MissionQueue> mission)
+{
+    if (!mission) return;
+
+    // Build evaluator states from mission legs
+    std::vector<fc::mission::LegEvalState> evalStates;
+    evalStates.reserve(mission->legCount());
+
+    for (std::size_t i = 0; i < mission->legCount(); ++i) {
+        const auto& leg = mission->leg(i);
+        fc::mission::LegEvalState state;
+        state.legIdx = static_cast<int>(i);
+        state.criterion = leg.criterion;
+        state.targetPosition = leg.targetPosition;
+        state.targetAltitude = leg.targetAltitude;
+        state.arrivalRadius = leg.arrivalRadius;
+        state.altitudeTolerance = leg.altitudeTolerance;
+        state.dwellTimeSeconds = leg.dwellTimeSeconds;
+        state.timeoutNs = leg.timeoutNs;
+        state.msgOutIdx = leg.msgOutIdx;
+        state.msgInIdx = leg.msgInIdx;
+        evalStates.push_back(std::move(state));
+    }
+
+    missionEvaluator_.load(std::move(evalStates));
+    missionEvaluator_.freeze();
+    mission_ = std::move(mission);
+}
+
+void Application::startMission() noexcept
+{
+    missionRunning_.store(true, std::memory_order_release);
+}
+
+void Application::pauseMission() noexcept
+{
+    missionRunning_.store(false, std::memory_order_release);
+}
+
+void Application::cancelMission() noexcept
+{
+    missionRunning_.store(false, std::memory_order_release);
+    mission_.reset();
+}
+
 void Application::run()
 {
     running_.store(true, std::memory_order_release);
@@ -123,6 +168,23 @@ void Application::rtCycle() noexcept
             q->safeState();
         }
         return;
+    }
+
+    // Mission execution (if mission loaded and running)
+    if (mission_ && missionRunning_.load(std::memory_order_acquire)) {
+        // TODO: Get current position from GPSWrapper when GPS integration is complete
+        // For now, use zero position (bench test validates logic separately)
+        common::math::Vec3f currentPosition{0.0f, 0.0f, 0.0f};
+        float currentAltitude = 0.0f;
+
+        missionEvaluator_.tick(currentPosition, currentAltitude, nowNs);
+
+        // Advance leg if criterion met
+        int currentLeg = mission_->currentLegIndex();
+        if (missionEvaluator_.shouldAdvanceLeg(currentLeg)) {
+            missionEvaluator_.markLegComplete(currentLeg);
+            mission_->advanceLeg();
+        }
     }
 
     for (auto& q : queues_) {

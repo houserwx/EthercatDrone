@@ -4,6 +4,8 @@
 #include "fc/pdo/HardwareRegistry.h"
 #include "fc/safety/MachineStateController.h"
 #include "fc/app/Queue.h"
+#include "fc/mission/MissionQueue.h"
+#include "fc/mission/MissionEvaluator.h"
 
 #include <atomic>
 #include <cstdint>
@@ -28,6 +30,12 @@ public:
     void requestStop() noexcept;
     void addQueue(std::unique_ptr<Queue> q);
 
+    // Mission planning
+    void setMission(std::unique_ptr<fc::mission::MissionQueue> mission);
+    void startMission() noexcept;
+    void pauseMission() noexcept;
+    void cancelMission() noexcept;
+
     [[nodiscard]] uint64_t cycleCount()   const noexcept;
     [[nodiscard]] int      overrunCount() const noexcept;
     [[nodiscard]] int64_t  maxOverrunNs() const noexcept;
@@ -45,6 +53,11 @@ private:
     uint32_t                    cycleNs_;
 
     fc::safety::MachineStateController stateMachine_;
+
+    // Mission planning (optional, set via setMission())
+    std::unique_ptr<fc::mission::MissionQueue> mission_;
+    fc::mission::MissionEvaluator              missionEvaluator_;
+    std::atomic<bool>                          missionRunning_{false};
 
     std::vector<std::unique_ptr<Queue>> queues_;
 
