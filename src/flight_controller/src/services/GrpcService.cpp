@@ -2,7 +2,7 @@
 
 namespace fc::services {
 
-GrpcService::GrpcService(LogStreamSink& logSink,
+GrpcService::GrpcService(common::log::LogStreamSink& logSink,
                          std::atomic<bool>& restartFlag,
                          fc::app::Application* app,
                          std::string address)

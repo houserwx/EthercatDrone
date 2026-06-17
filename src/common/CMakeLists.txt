@@ -6,6 +6,8 @@ set(COMMON_SOURCES
     src/log/Logger.cpp
     src/log/sinks/ConsoleSink.cpp
     src/log/sinks/FileSink.cpp
+    src/log/sinks/LogStreamSink.cpp
+    src/config/Config.cpp
     src/messages/Message.cpp
 )
 

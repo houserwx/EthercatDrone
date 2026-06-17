@@ -117,4 +117,17 @@ void Logger::formatAndOutput(const messages::LogEntry& entry) const
     }
 }
 
+bool threadLoggerInit(bool isRt)
+{
+    common::ThreadBuffer* buf = Logger::instance().registerThread(isRt);
+    return buf != nullptr;
+}
+
+void log(messages::LogLevel level, messages::MessageId id,
+         int64_t p1, int64_t p2, int64_t p3) noexcept
+{
+    // TODO: get thread-local buffer and push entry
+    (void)level; (void)id; (void)p1; (void)p2; (void)p3;
+}
+
 } // namespace common::log

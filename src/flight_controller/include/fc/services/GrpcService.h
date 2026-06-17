@@ -19,7 +19,7 @@ namespace fc::services {
 
 class GrpcService final : public common::rt::Threadrunner {
 public:
-    explicit GrpcService(LogStreamSink&              logSink,
+    explicit GrpcService(common::log::LogStreamSink& logSink,
                          std::atomic<bool>&          restartFlag,
                          fc::app::Application*       app,
                          std::string                 address = "0.0.0.0:50051");
@@ -29,7 +29,7 @@ public:
     void run() override;
 
 private:
-    LogStreamSink&              logSink_;
+    common::log::LogStreamSink& logSink_;
     std::atomic<bool>&          restartFlag_;
     fc::app::Application*       app_;
     std::string                 address_;
