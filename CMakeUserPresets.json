@@ -1,0 +1,41 @@
+{
+    "version": 4,
+    "configurePresets": [
+        {
+            "name": "debug-linux",
+            "displayName": "Debug Linux (x86_64)",
+            "binaryDir": "${sourceDir}/build/debug-linux",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_CXX_FLAGS": "-g -O0"
+            }
+        },
+        {
+            "name": "release-linux",
+            "displayName": "Release Linux (x86_64)",
+            "binaryDir": "${sourceDir}/build/release-linux",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_CXX_FLAGS": "-O3"
+            }
+        },
+        {
+            "name": "debug-arm",
+            "displayName": "Debug ARM (aarch64 cross-compile)",
+            "binaryDir": "${sourceDir}/build/debug-arm",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/aarch64-linux-gnu.cmake"
+            }
+        },
+        {
+            "name": "release-arm",
+            "displayName": "Release ARM (aarch64 cross-compile)",
+            "binaryDir": "${sourceDir}/build/release-arm",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/aarch64-linux-gnu.cmake"
+            }
+        }
+    ]
+}

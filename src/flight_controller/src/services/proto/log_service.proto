@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package ethercat_drone.logger.v1;
+
+service LogService {
+  rpc TailLogs (TailLogsRequest) returns (stream LogEntry);
+}
+
+message TailLogsRequest {}
+
+message LogEntry {
+  uint32 level = 1;
+  uint32 id = 2;
+  uint64 timestamp_ns = 3;
+  int64 p1 = 4;
+  int64 p2 = 5;
+  int64 p3 = 6;
+}

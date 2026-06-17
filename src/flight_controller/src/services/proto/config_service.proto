@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package ethercat_drone.config.v1;
+
+service ConfigService {
+  rpc GetHardwareConfig (GetHardwareConfigRequest) returns (GetHardwareConfigResponse);
+  rpc UpdateHardwareConfig (UpdateHardwareConfigRequest) returns (UpdateHardwareConfigResponse);
+  rpc ListVehicles (ListVehiclesRequest) returns (ListVehiclesResponse);
+  rpc GetVehicle (GetVehicleRequest) returns (GetVehicleResponse);
+  rpc CreateOrUpdateVehicle (CreateOrUpdateVehicleRequest) returns (CreateOrUpdateVehicleResponse);
+  rpc DeleteVehicle (DeleteVehicleRequest) returns (DeleteVehicleResponse);
+  rpc SaveAllConfigs (SaveAllConfigsRequest) returns (SaveAllConfigsResponse);
+  rpc RequestRestart (RequestRestartRequest) returns (RequestRestartResponse);
+}
+
+message GetHardwareConfigRequest {}
+message GetHardwareConfigResponse { string config_json = 1; }
+
+message UpdateHardwareConfigRequest { string config_json = 1; }
+message UpdateHardwareConfigResponse {}
+
+message ListVehiclesRequest {}
+message ListVehiclesResponse { repeated string vehicle_ids = 1; }
+
+message GetVehicleRequest { string vehicle_id = 1; }
+message GetVehicleResponse { string config_json = 1; }
+
+message CreateOrUpdateVehicleRequest { string vehicle_id = 1; string config_json = 2; }
+message CreateOrUpdateVehicleResponse {}
+
+message DeleteVehicleRequest { string vehicle_id = 1; }
+message DeleteVehicleResponse {}
+
+message SaveAllConfigsRequest {}
+message SaveAllConfigsResponse {}
+
+message RequestRestartRequest {}
+message RequestRestartResponse {}

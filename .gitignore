@@ -1,0 +1,46 @@
+# External references (not tracked)
+externalReferences/
+
+# Build artifacts
+build/
+cmake-build-*/
+out/
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.lib
+*.exe
+*.bin
+*.out
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+*.egg
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Secrets
+*.key
+*.pem

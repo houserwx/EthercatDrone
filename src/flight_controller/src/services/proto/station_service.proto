@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package ethercat_drone.station.v1;
+
+service StationService {
+  rpc StreamStationChannel (stream StationTrigger) returns (stream StationResult);
+}
+
+message StationTrigger {
+  string channel_id = 1;
+  uint64 seq = 2;
+  int64 product_id = 3;
+  uint64 timestamp_ns = 4;
+}
+
+message StationResult {
+  string channel_id = 1;
+  uint64 seq = 2;
+  InspectionResult result = 3;
+}
+
+enum InspectionResult {
+  UNKNOWN = 0;
+  PASS = 1;
+  FAIL = 2;
+  REJECTED = 3;
+  CORRECTED = 4;
+  FIRED = 5;
+}
