@@ -151,19 +151,19 @@ int main(int argc, char* argv[])
     printf("Running simulation (speed=%.1f m/s, cycle=1ms)...\n\n", simSpeed);
 
     int lastLegIdx = -1;
-    float lastAlt = 0.0f;
 
     for (uint64_t cycle = 0; cycle < maxCycles; ++cycle) {
         uint64_t nowNs = cycle * cycleNs;
 
         // Simulate GPS position along the path
         auto pos = interpolatePosition(waypoints, simSpeed, nowNs);
-        float alt = static_cast<float>(cycle % 100) * 0.3f; // Simulated altitude ramp
+        // Simulate altitude: ramp up to 30m over first 100 cycles, then vary
+        float alt = (cycle < 100) ? static_cast<float>(cycle) * 0.3f : 30.0f;
 
         // Evaluate mission
         evaluator.tick(pos, alt, nowNs);
 
-        // Check current leg
+        // Check if current leg can advance
         int currentLeg = mission->currentLegIndex();
 
         // Print leg transitions
@@ -177,8 +177,35 @@ int main(int argc, char* argv[])
             }
         }
 
-        // Check completion
-        if (evaluator.missionComplete()) {
+        // Simulate gRPC action completion for ImageMatch/ManualAck legs
+        // In real system, this would come from gRPC StationResult
+        {
+            const auto& leg = mission->leg(currentLeg);
+            if (leg.criterion == fc::mission::LegCriterion::ImageMatch ||
+                leg.criterion == fc::mission::LegCriterion::ManualAck) {
+                // Simulate action completing after 2 seconds at waypoint
+                float dx = pos.x - leg.targetPosition.x;
+                float dy = pos.y - leg.targetPosition.y;
+                float dist = std::sqrt(dx * dx + dy * dy);
+                if (dist < leg.arrivalRadius) {
+                    evaluator.simulateActionComplete(currentLeg);
+                }
+            }
+        }
+
+        // Advance leg if criterion met
+        if (evaluator.shouldAdvanceLeg(currentLeg)) {
+            printf("[cycle %6lu]   ✓ Leg %d complete: %s\n",
+                   static_cast<unsigned long>(cycle),
+                   currentLeg,
+                   mission->leg(currentLeg).name.c_str());
+
+            evaluator.markLegComplete(currentLeg);
+            mission->advanceLeg();
+        }
+
+        // Check mission completion
+        if (mission->isComplete()) {
             printf("\n[cycle %6lu] Mission COMPLETE!\n",
                    static_cast<unsigned long>(cycle));
             printf("Total time: %.1fs\n",

@@ -35,6 +35,7 @@ struct LegEvalState {
     bool        actionPending{false};
     bool        actionComplete{false};
     bool        canAdvance{false};
+    bool        completed{false};  // Set true after leg is advanced past
 };
 
 // ============================================================================
@@ -54,6 +55,12 @@ public:
 
     [[nodiscard]] bool shouldAdvanceLeg(int legIdx) const noexcept;
     [[nodiscard]] bool missionComplete() const noexcept;
+
+    // Mark a leg as completed (called after mission advances past it)
+    void markLegComplete(int legIdx) noexcept;
+
+    // Simulate gRPC action completion (for bench testing only)
+    void simulateActionComplete(int legIdx) noexcept;
 
 private:
     std::vector<LegEvalState> states_;
@@ -77,9 +84,23 @@ inline bool MissionEvaluator::shouldAdvanceLeg(int legIdx) const noexcept
 inline bool MissionEvaluator::missionComplete() const noexcept
 {
     for (const auto& state : states_) {
-        if (!state.canAdvance) return false;
+        if (!state.canAdvance && !state.completed) return false;
     }
     return true;
+}
+
+inline void MissionEvaluator::markLegComplete(int legIdx) noexcept
+{
+    if (legIdx >= 0 && legIdx < static_cast<int>(states_.size())) {
+        states_[legIdx].completed = true;
+    }
+}
+
+inline void MissionEvaluator::simulateActionComplete(int legIdx) noexcept
+{
+    if (legIdx >= 0 && legIdx < static_cast<int>(states_.size())) {
+        states_[legIdx].actionComplete = true;
+    }
 }
 
 } // namespace fc::mission

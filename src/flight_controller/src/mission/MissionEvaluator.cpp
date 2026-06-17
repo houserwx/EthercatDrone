@@ -44,8 +44,10 @@ void MissionEvaluator::tick(const common::math::Vec3f& currentPosition,
             }
         }
 
-        // Evaluate criterion
-        state.canAdvance = checkCriterion(state, currentPosition, currentAltitude, nowNs);
+        // Evaluate criterion (skip already-completed legs)
+        if (!state.completed) {
+            state.canAdvance = checkCriterion(state, currentPosition, currentAltitude, nowNs);
+        }
     }
 }
 
