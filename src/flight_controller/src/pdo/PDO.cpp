@@ -107,6 +107,8 @@ void PDO::freeze()
     image.shrink_to_fit();
 
     // Re-base image pointers for adapters that own their buffer.
+    // If image.empty(), entry image pointers are left untouched — they already
+    // point into backend-owned memory (e.g., EtherCAT domainData_).
     if (!image.empty()) {
         for (auto& entry : entries) {
             entry.image = image.data() + entry.byteOffset;

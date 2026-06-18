@@ -25,6 +25,8 @@ set(FC_SOURCES
     src/safety/AlwaysOnEval.cpp
     src/safety/RulesEvalData.cpp
     src/safety/LineMonitor.cpp
+    # Redundancy
+    src/redundancy/RedundancyController.cpp
     # Application
     src/app/Application.cpp
     src/app/Queue.cpp

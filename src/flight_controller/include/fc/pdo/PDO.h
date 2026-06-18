@@ -180,6 +180,16 @@ private:
 
 // ------------------------------------------------------------
 // PDO — owns an image buffer and the entries that live in it.
+//
+// Lifecycle:
+//   Init:    adapter constructs PDOEntry values and pushes them into
+//            PDO::entries; adapter sets PDO::image (or leaves it empty
+//            if image is owned by the backend, e.g. EtherCAT domainData).
+//   Freeze:  PDO::freeze() shrinks storage and re-bases entry image
+//            pointers.  If image.empty(), entry image pointers are left
+//            untouched (they already point into backend-owned memory).
+//   RT:      PDOEntry::read() / write() are the only methods called
+//            in the hot path — inlineable, branch-predictable.
 // ------------------------------------------------------------
 struct PDO {
     std::vector<uint8_t>  image;

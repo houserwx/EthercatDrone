@@ -59,37 +59,77 @@ struct CatalogEntry {
 
 // ---------------------------------------------------------------------------
 // HardwareCatalog — backend-agnostic channel registry.
+//
+// Usage:
+//   1. catalog.load(path)                   — at startup (ok if file absent)
+//   2. adapter.setCatalog(&catalog)
+//   3. adapter.initialize()                 — registers channels during discovery
+//   4. catalog.save(path)                   — immediately after initialize()
+//   5. registry.buildUuidMap()              — builds string→PDOEntry* map
+//
+// On subsequent starts the same keys re-map to the same UUIDs.
 // ---------------------------------------------------------------------------
 class HardwareCatalog {
 public:
     bool load(const std::string& path);
-    void save(const std::string& path) const;
+    bool save(const std::string& path) const;
 
-    /// Find entry by stable key (backend|location|model|channel).
-    [[nodiscard]] const CatalogEntry* findByKey(const std::string& key) const noexcept;
+    // ---- Registration (called during EtherCAT / I2C / SPI discovery) ----
 
-    /// Find entry by UUID.
+    /// Register or look up an EtherCAT PDO channel.
+    /// If the key already exists the existing entry is returned unchanged,
+    /// preserving UUID across restarts.
+    const CatalogEntry& registerEcChannel(
+        uint32_t    vendorId,
+        uint32_t    productCode,
+        uint32_t    revisionNumber,
+        uint16_t    slavePos,
+        uint16_t    pdoIndex,
+        uint8_t     pdoSubindex,
+        const std::string& channelType,
+        const std::string& slaveName,
+        bool        isOutput
+    );
+
+    /// Register a new channel entry (generic backend). Generates UUID if key is new.
+    void addEntry(CatalogEntry entry);
+
+    // ---- Accessors --------------------------------------------------------
+
+    [[nodiscard]] bool empty() const noexcept { return entries_.empty(); }
+    [[nodiscard]] const std::vector<CatalogEntry>& entries() const noexcept { return entries_; }
+
+    /// Find by UUID — used to resolve config hardwareUuid references.
     [[nodiscard]] const CatalogEntry* findByUuid(const std::string& uuid) const noexcept;
+
+    /// Find by stable key.
+    [[nodiscard]] const CatalogEntry* findByKey(const std::string& key) const noexcept;
 
     /// Find EtherCAT entry by vendorId + productCode (backward compatibility).
     [[nodiscard]] const CatalogEntry* find(uint32_t vendorId, uint32_t productCode) const noexcept;
 
-    [[nodiscard]] bool empty() const noexcept { return entries_.empty(); }
-
-    /// Register a new channel entry. Generates UUID if key is new.
-    void addEntry(CatalogEntry entry);
-
     /// Get or generate UUID for a given key.
     [[nodiscard]] std::string getOrCreateUuid(const std::string& key) noexcept;
 
-    [[nodiscard]] const std::vector<CatalogEntry>& entries() const noexcept { return entries_; }
-
 private:
-    std::vector<CatalogEntry> entries_;
-    std::unordered_map<std::string, size_t> keyIndex_;  // key → entries_ index
+    std::vector<CatalogEntry>               entries_;
+    std::unordered_map<std::string, size_t> keyIndex_;   ///< key  → index
+    std::unordered_map<std::string, size_t> uuidIndex_;  ///< uuid → index
 
-    /// Generate a random RFC-4122 v4 UUID (simple implementation).
-    static std::string generateUuid() noexcept;
+    void rebuildIndices();
+
+    /// Build the canonical key string from slave identity + PDO address.
+    static std::string makeKey(uint32_t vendorId, uint32_t productCode,
+                               uint32_t revisionNumber, uint16_t slavePos,
+                               uint16_t pdoIndex, uint8_t pdoSubindex);
+
+    /// Build a human-readable name for a new entry.
+    static std::string makeName(const std::string& slaveName, uint16_t slavePos,
+                                const std::string& channelType,
+                                uint16_t pdoIndex, uint8_t pdoSubindex);
+
+    /// Generate a random RFC-4122 v4 UUID string.
+    static std::string generateUuid();
 };
 
 } // namespace fc::pdo
