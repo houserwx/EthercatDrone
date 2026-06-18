@@ -6,10 +6,12 @@
 #include "fc/app/Queue.h"
 #include "fc/mission/MissionQueue.h"
 #include "fc/mission/MissionEvaluator.h"
+#include "fc/redundancy/RedundancyController.h"
 
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace fc::app {
@@ -29,6 +31,13 @@ public:
 
     void requestStop() noexcept;
     void addQueue(std::unique_ptr<Queue> q);
+
+    // Redundancy
+    void setRedundancyController(std::unique_ptr<fc::redundancy::RedundancyController> ctrl);
+    [[nodiscard]] bool redundancyEnabled() const noexcept { return redundancyCtrl_ != nullptr; }
+    [[nodiscard]] fc::redundancy::Role currentRole() const noexcept {
+        return redundancyCtrl_ ? redundancyCtrl_->currentRole() : fc::redundancy::Role::PRIMARY;
+    }
 
     // Mission planning
     void setMission(std::unique_ptr<fc::mission::MissionQueue> mission);
@@ -61,6 +70,7 @@ private:
 
     std::vector<std::unique_ptr<Queue>> queues_;
 
+    std::unique_ptr<fc::redundancy::RedundancyController> redundancyCtrl_;
     std::atomic<bool> running_{false};
     uint64_t  cycleCount_   {0};
     int64_t   maxOverrunNs_ {0};

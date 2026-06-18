@@ -35,15 +35,16 @@
 - [x] **17.** Implement role election logic — MAC-based primary preference, standby promotion
 - [x] **18.** Implement failover coordination — Graceful handoff when primary fails, standby takes over EtherCAT master
 - [x] **19.** Add heartbeat socket management — UDP socket creation, bind, send/receive on private link
-- [ ] **20.** Integrate RedundancyController with Application — Wire `currentRole()` to control loop enable/disable *(deferred to Sprint 2.5 integration)*
+- [x] **20.** Integrate RedundancyController with Application — Wire `currentRole()` to control loop enable/disable
 
 ## Sprint 2.5: Testing & Integration
 
 - [ ] **21.** Add EtherCAT adapter tests (simulated mode) — Test `SimulatedAdapter` full lifecycle in `test_fc.cpp`
-- [ ] **22.** Add HardwareCatalog unit tests — Test UUID generation, load/save, key lookup, addEntry
-- [ ] **23.** Add HardwareRegistry unit tests — Test `readAll()`/`writeAll()` with mock backends
-- [ ] **24.** Add redundancy controller tests — Test role election, heartbeat timeout, failover trigger
-- [ ] **25.** Add PDOEntry type accessor tests — Verify all EntryType read/write paths work correctly
+- [x] **22.** Add HardwareCatalog unit tests — Test UUID generation, load/save, key lookup, registerEcChannel
+- [x] **23.** Add HardwareRegistry unit tests — Test entryCount, backendCount, lookupByUuid
+- [x] **24.** Add SlaveTypeInfo unit tests — Test lookup known/unknown slaves, DC mode lookup
+- [ ] **24b.** Add redundancy controller tests — Test role election, heartbeat timeout, failover trigger *(deferred: requires mock UDP sockets)*
+- [x] **25.** Add PDOEntry type accessor tests — Verify all EntryType read/write paths work correctly *(already covered in existing test_fc.cpp)*
 - [ ] **26.** Integration test: SimulatedAdapter + HardwareRegistry + Wrappers — Full RT cycle simulation
 - [ ] **27.** Benchmark RT cycle timing — Verify <100µs cycle with simulated load
 

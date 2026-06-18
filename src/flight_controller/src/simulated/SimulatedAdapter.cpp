@@ -11,15 +11,30 @@ bool SimulatedAdapter::initialize()
 
     // Build one PDO with entries matching the config.
     pdos_.resize(1);
-    pdos_[0].image.resize(cfg_.pdoEntries.size());
     pdos_[0].entries.reserve(cfg_.pdoEntries.size());
 
     simStates_.reserve(cfg_.pdoEntries.size());
 
+    // First pass: compute total image size based on entry types.
+    std::size_t totalImageBytes = 0;
+    for (const auto& def : cfg_.pdoEntries) {
+        if (def.channelType == "Encoder") {
+            totalImageBytes += sizeof(int64_t);
+        } else if (def.channelType == "AnalogInput" || def.channelType == "AnalogOutput") {
+            totalImageBytes += sizeof(int16_t);
+        } else {
+            // DigitalInput, DigitalOutput — 1 byte each
+            totalImageBytes += 1;
+        }
+    }
+    pdos_[0].image.resize(totalImageBytes);
+
+    // Second pass: build entries with proper byte offsets.
+    std::size_t currentOffset = 0;
     for (const auto& def : cfg_.pdoEntries) {
         fc::pdo::PDOEntry entry;
         entry.uuid       = def.hwUuid;
-        entry.byteOffset = static_cast<uint32_t>(pdos_[0].entries.size());
+        entry.byteOffset = static_cast<uint32_t>(currentOffset);
 
         SimState sim;
 
@@ -38,6 +53,7 @@ bool SimulatedAdapter::initialize()
             } else {
                 sim.inc = 10;  // legacy fallback
             }
+            currentOffset += sizeof(int64_t);
         } else if (def.channelType == "DigitalInput") {
             entry.type = fc::pdo::EntryType::DigitalInput;
             entry.bitLength = 1;
@@ -55,23 +71,27 @@ bool SimulatedAdapter::initialize()
             } else {
                 sim.toggleEvery = 20;  // legacy fallback
             }
+            currentOffset += 1;
         } else if (def.channelType == "DigitalOutput") {
             entry.type = fc::pdo::EntryType::DigitalOutput;
             entry.bitLength = 1;
             entry.configurePulseMs(def.pulseMs);
             sim.type = fc::pdo::EntryType::DigitalOutput;
             sim.byteOffset = entry.byteOffset;
+            currentOffset += 1;
         } else if (def.channelType == "AnalogInput") {
             entry.type = fc::pdo::EntryType::AnalogInput;
             entry.bitLength = 16;
             sim.type = fc::pdo::EntryType::AnalogInput;
             sim.byteOffset = entry.byteOffset;
             sim.staticAdc = 0;
+            currentOffset += sizeof(int16_t);
         } else if (def.channelType == "AnalogOutput") {
             entry.type = fc::pdo::EntryType::AnalogOutput;
             entry.bitLength = 16;
             sim.type = fc::pdo::EntryType::AnalogOutput;
             sim.byteOffset = entry.byteOffset;
+            currentOffset += sizeof(int16_t);
         }
 
         pdos_[0].entries.push_back(std::move(entry));

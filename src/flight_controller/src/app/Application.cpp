@@ -107,6 +107,11 @@ void Application::cancelMission() noexcept
     mission_.reset();
 }
 
+void Application::setRedundancyController(std::unique_ptr<fc::redundancy::RedundancyController> ctrl)
+{
+    redundancyCtrl_ = std::move(ctrl);
+}
+
 void Application::run()
 {
     running_.store(true, std::memory_order_release);
@@ -167,6 +172,12 @@ void Application::rtCycle() noexcept
         for (auto& q : queues_) {
             q->safeState();
         }
+        return;
+    }
+
+    // Redundancy gate: only execute control logic when acting as PRIMARY
+    if (redundancyCtrl_ && !redundancyCtrl_->isPrimary()) {
+        // Standby mode — skip queue ticks, keep safety state machine running
         return;
     }
 
