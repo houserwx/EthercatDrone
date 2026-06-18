@@ -122,9 +122,8 @@ void GPIOAdapter::discoverLines()
     uint32_t total_lines = gpioLineCount(variant_);
 
 #if HAS_LIBGPIOD
-    if (!stubMode_ && handles_.size() > 0 && handles_[0].gpiod_chip) {
-        // Query actual line count from the chip
-        auto* chip = static_cast<struct gpiod_chip*>(handles_[0].gpiod_chip);
+    if (!stubMode_ && chipHandle_) {
+        auto* chip = static_cast<struct gpiod_chip*>(chipHandle_);
         total_lines = static_cast<uint32_t>(gpiod_chip_num_lines(chip));
     }
 #endif
@@ -279,7 +278,7 @@ bool GPIOAdapter::openChip() noexcept
     struct gpiod_chip* chip = gpiod_chip_open(chipPath_.c_str());
     if (!chip) return false;
 
-    handles_[0].gpiod_chip = chip;
+    chipHandle_ = chip;
     return true;
 #else
     return false;
@@ -292,7 +291,7 @@ bool GPIOAdapter::openChip() noexcept
 bool GPIOAdapter::requestLine(GPIOLine& line, size_t index) noexcept
 {
 #if HAS_LIBGPIOD
-    auto* chip = static_cast<struct gpiod_chip*>(handles_[0].gpiod_chip);
+    auto* chip = static_cast<struct gpiod_chip*>(chipHandle_);
     if (!chip) return false;
 
     const char* consumer = "EtherCatDrone";
@@ -328,9 +327,9 @@ bool GPIOAdapter::requestLine(GPIOLine& line, size_t index) noexcept
 void GPIOAdapter::closeChip() noexcept
 {
 #if HAS_LIBGPIOD
-    if (handles_.size() > 0 && handles_[0].gpiod_chip) {
-        gpiod_chip_close(static_cast<struct gpiod_chip*>(handles_[0].gpiod_chip));
-        handles_[0].gpiod_chip = nullptr;
+    if (chipHandle_) {
+        gpiod_chip_close(static_cast<struct gpiod_chip*>(chipHandle_));
+        chipHandle_ = nullptr;
     }
 #endif
 }

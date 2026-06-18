@@ -103,11 +103,10 @@ private:
 
     // libgpiod handles (real hardware mode)
     struct LineHandle {
-        // libgpiod line handles — abstracted behind opaque pointers
-        // to allow switching between libgpiod v1 and v2 APIs
+        // libgpiod line handle — abstracted behind opaque pointer
         void* gpiod_line{nullptr};
-        void* gpiod_chip{nullptr};
     };
+    void*               chipHandle_{nullptr}; // gpiod_chip* stored separately
     std::vector<LineHandle> handles_;
 
     // Stub fallback mode (no libgpiod)
