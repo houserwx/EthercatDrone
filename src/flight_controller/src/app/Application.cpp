@@ -1,6 +1,6 @@
 #include "fc/app/Application.h"
 #include "fc/app/Queue.h"
-#include "common/rt/SignalProcess.h"
+#include "dynamichardware/rt/SignalProcess.h"
 #include "common/log/LogHelper.h"
 #include "common/messages/MessageTypes.h"
 

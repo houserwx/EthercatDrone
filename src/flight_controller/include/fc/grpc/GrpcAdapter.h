@@ -2,7 +2,7 @@
 #include "fc/pdo/IHardwareAdapter.h"
 #include "fc/grpc/GrpcTriggerMessage.h"
 #include "fc/grpc/GrpcResultMessage.h"
-#include "common/rt/VectorBuffer.h"
+#include "dynamichardware/rt/VectorBuffer.h"
 #include <cstdint>
 #include <memory>
 #include <string>

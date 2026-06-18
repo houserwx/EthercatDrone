@@ -1,7 +1,7 @@
 #include "common/log/Logger.h"
 #include "common/messages/Message.h"
 #include "common/rt/ThreadBuffer.h"
-#include "common/rt/SignalProcess.h"
+#include "dynamichardware/rt/SignalProcess.h"
 
 #include <chrono>
 #include <cstring>

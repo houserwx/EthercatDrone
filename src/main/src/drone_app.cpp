@@ -12,7 +12,7 @@
 //   8. Final diagnostics + Logger stop
 // ============================================================================
 
-#include "common/config/Config.h"
+#include "dynamichardware/config/Config.h"
 #include "fc/ethercat/EthercatAdapter.h"
 #include "fc/ethercat/HardwareCatalog.h"
 #include "fc/gpio/GPIOAdapter.h"

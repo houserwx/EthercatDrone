@@ -5,7 +5,7 @@
 // Used by the Logger to collect LogEntry structs from multiple threads.
 // ============================================================================
 
-#include "VectorBuffer.h"
+#include "dynamichardware/rt/VectorBuffer.h"
 
 namespace messages {
 struct LogEntry;

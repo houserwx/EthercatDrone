@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/rt/VectorBuffer.h"
+#include "dynamichardware/rt/VectorBuffer.h"
 
 #include <array>
 #include <atomic>

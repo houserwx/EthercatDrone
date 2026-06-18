@@ -1,6 +1,6 @@
 #pragma once
 #include "fc/pdo/IHardwareAdapter.h"
-#include "common/config/Config.h"
+#include "dynamichardware/config/Config.h"
 #include <vector>
 #include <cstdint>
 

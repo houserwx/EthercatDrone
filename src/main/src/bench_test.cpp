@@ -5,7 +5,7 @@
 // No EtherCAT hardware required.
 // ============================================================================
 
-#include "common/config/Config.h"
+#include "dynamichardware/config/Config.h"
 #include "fc/simulated/SimulatedAdapter.h"
 #include "fc/pdo/HardwareRegistry.h"
 #include "fc/app/Application.h"

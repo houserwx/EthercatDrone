@@ -19,7 +19,7 @@
 //            in the hot path — inlineable, branch-predictable.
 // ============================================================================
 
-#include "common/rt/SignalProcess.h"
+#include "dynamichardware/rt/SignalProcess.h"
 
 #include <cstdint>
 #include <cstring>
