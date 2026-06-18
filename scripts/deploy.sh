@@ -50,6 +50,8 @@ COMPANION_DEPLOY_DIR="${COMPANION_DEPLOY_DIR:-/home/vis/ethercatdrone}"
 DEPLOY_DIR_NAME="${DEPLOY_DIR_NAME:-deploy}"
 BUILD_TYPE="${BUILD_TYPE:-Release}"
 SKIP_TESTS="${SKIP_TESTS:-false}"
+REMOTE_PASSWORD="${REMOTE_PASSWORD:-}"
+REMOTE_SUDO_PASSWORD="${REMOTE_SUDO_PASSWORD:-}"
 
 # ---- Flags ---------------------------------------------------------------
 DEPLOY_FLYBOARD_A=false
@@ -112,6 +114,10 @@ ssh_cmd() {
     local user="$1" host="$2" cmd="$3"
     if $DO_DRY_RUN; then
         echo "[dry-run] ssh $user@$host $cmd"
+    elif [ -n "$REMOTE_PASSWORD" ]; then
+        sshpass -p "$REMOTE_PASSWORD" ssh -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=10 -o PreferredAuthentications=keyboard-interactive,password \
+            "$user@$host" "$cmd"
     else
         ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
             "$user@$host" "$cmd"
@@ -122,6 +128,10 @@ scp_cmd() {
     local src="$1" user="$2" host="$3" dst="$4"
     if $DO_DRY_RUN; then
         echo "[dry-run] scp $src $user@$host:$dst"
+    elif [ -n "$REMOTE_PASSWORD" ]; then
+        sshpass -p "$REMOTE_PASSWORD" scp \
+            -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+            "$src" "$user@$host:$dst"
     else
         scp -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
             "$src" "$user@$host:$dst"
@@ -132,13 +142,56 @@ scp_dir_cmd() {
     local src="$1" user="$2" host="$3" dst="$4"
     if $DO_DRY_RUN; then
         echo "[dry-run] scp -r $src $user@$host:$dst"
+    elif [ -n "$REMOTE_PASSWORD" ]; then
+        sshpass -p "$REMOTE_PASSWORD" scp -r \
+            -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+            "$src" "$user@$host:$dst"
     else
         scp -r -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
             "$src" "$user@$host:$dst"
     fi
 }
 
+# Run a sudo command remotely using the sudo password
+sudo_ssh_cmd() {
+    local user="$1" host="$2" cmd="$3"
+    if $DO_DRY_RUN; then
+        echo "[dry-run] sudo ssh $user@$host $cmd"
+    elif [ -n "$REMOTE_SUDO_PASSWORD" ]; then
+        echo "$REMOTE_SUDO_PASSWORD" | sshpass -p "$REMOTE_PASSWORD" ssh \
+            -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+            "$user@$host" "echo '$REMOTE_SUDO_PASSWORD' | sudo -S $cmd"
+    elif [ -n "$REMOTE_PASSWORD" ]; then
+        # Fall back to using remote password as sudo password
+        echo "$REMOTE_PASSWORD" | sshpass -p "$REMOTE_PASSWORD" ssh \
+            -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+            "$user@$host" "echo '$REMOTE_PASSWORD' | sudo -S $cmd"
+    else
+        ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+            "$user@$host" "sudo $cmd"
+    fi
+}
+
 # ---- 0. Dependency checks ------------------------------------------------
+hdr "Authentication"
+
+# Prompt for password if not provided via environment
+if [ -z "$REMOTE_PASSWORD" ]; then
+    echo -n "Remote password (or press Enter for key-based auth): "
+    IFS= read -r -s REMOTE_PASSWORD
+    echo
+    if [ -z "$REMOTE_PASSWORD" ]; then
+        warn "No password provided — using key-based SSH auth"
+    fi
+else
+    ok "Using password from REMOTE_PASSWORD env var"
+fi
+
+# Sudo password defaults to remote password unless set separately
+if [ -z "$REMOTE_SUDO_PASSWORD" ] && [ -n "$REMOTE_PASSWORD" ]; then
+    REMOTE_SUDO_PASSWORD="$REMOTE_PASSWORD"
+fi
+
 hdr "Checking Dependencies"
 
 check_cmd() {
@@ -152,6 +205,13 @@ check_cmd cmake
 check_cmd ninja
 check_cmd ssh
 check_cmd scp
+
+# sshpass is needed for password auth (but not fatal if using keys)
+if [ -n "$REMOTE_PASSWORD" ] && ! command -v sshpass &>/dev/null; then
+    err "sshpass required for password authentication"
+    echo "Install: sudo apt install sshpass"
+    exit 1
+fi
 
 # Cross-compile toolchain
 if ! command -v aarch64-linux-gnu-g++ &>/dev/null; then
@@ -186,8 +246,7 @@ fetch_ethercat_from_target() {
     fi
 
     # Test connectivity
-    if ! ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 \
-        "$user@$host" "echo ok" &>/dev/null; then
+    if ! ssh_cmd "$user" "$host" "echo ok" &>/dev/null; then
         warn "Cannot reach $user@$host — skipping libethercat fetch"
         return 1
     fi
@@ -203,7 +262,7 @@ fetch_ethercat_from_target() {
     local found=false
     for pattern in "${lib_paths[@]}"; do
         local found_libs
-        found_libs=$(ssh "$user@$host" "find $pattern -type f -o -type l 2>/dev/null | head -5" || true)
+        found_libs=$(ssh_cmd "$user" "$host" "find $pattern -type f -o -type l 2>/dev/null | head -5" || true)
         if [ -n "$found_libs" ]; then
             found=true
             while IFS= read -r lib; do
@@ -227,8 +286,7 @@ fetch_ethercat_from_target() {
         local basename
         basename=$(basename "$lib")
         echo "  Fetching: $basename"
-        scp -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
-            "$user@$host:$lib" "$DEPLOY_STAGING/lib/" 2>/dev/null || true
+        scp_cmd "$user@$host:$lib" "$user" "$host" "$DEPLOY_STAGING/lib/" 2>/dev/null || true
     done
 
     ok "Fetched libethercat from $label"
@@ -462,8 +520,7 @@ deploy_to_host() {
 
     # Test connectivity
     if ! $DO_DRY_RUN; then
-        if ! ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 \
-            "$user@$host" "echo ok" &>/dev/null; then
+        if ! ssh_cmd "$user" "$host" "echo ok" &>/dev/null; then
             err "Cannot reach $user@$host — check SSH/network"
             echo "  Fix: ssh $user@$host"
             return 1
@@ -477,7 +534,7 @@ deploy_to_host() {
     # Upload deployment package
     scp_dir_cmd "$DEPLOY_STAGING/." "$user" "$host" "$deploy_dir/"
 
-    # Run post-deploy setup
+    # Run post-deploy setup (handles sudo internally via setup.sh)
     ssh_cmd "$user" "$host" "bash '$deploy_dir/scripts/setup.sh'"
 
     ok "Deployed to $label → $deploy_dir"
