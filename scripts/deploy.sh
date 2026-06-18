@@ -644,15 +644,21 @@ deploy_to_host() {
     fi
     ok "Connected to $host"
 
-    # Create remote directory structure (scp won't create intermediate dirs)
-    ssh_cmd "$user" "$host" "mkdir -p '$deploy_dir/bin' '$deploy_dir/config' '$deploy_dir/scripts' '$deploy_dir/lib' '$deploy_dir/logs'"
+    # Create remote directory structure (scp -r won't create intermediate dirs)
+    ssh_cmd "$user" "$host" "mkdir -p '${deploy_dir}/bin' '${deploy_dir}/config' '${deploy_dir}/scripts' '${deploy_dir}/lib' '${deploy_dir}/logs'"
 
-    # Upload deployment package
+    # Upload each directory separately to avoid scp -r failures
     echo "  Uploading..."
-    if ! scp_push_dir "$DEPLOY_STAGING/." "$user" "$host" "$deploy_dir/"; then
-        err "SCP upload failed"
-        return 1
-    fi
+    local subdirs=(bin config scripts lib)
+    for sub in "${subdirs[@]}"; do
+        if [ -d "$DEPLOY_STAGING/$sub" ]; then
+            echo "    $sub/"
+            scp_push_dir "$DEPLOY_STAGING/$sub/" "$user" "$host" "$deploy_dir/$sub/" || {
+                err "SCP upload failed for $sub/"
+                return 1
+            }
+        fi
+    done
 
     # Run post-deploy setup
     ssh_cmd "$user" "$host" "bash '$deploy_dir/scripts/setup.sh'"
