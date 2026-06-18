@@ -152,6 +152,21 @@ scp_dir_cmd() {
     fi
 }
 
+# Pull a file FROM a remote target to local destination
+scp_pull_cmd() {
+    local user="$1" host="$2" remote_path="$3" local_dst="$4"
+    if $DO_DRY_RUN; then
+        echo "[dry-run] scp $user@$host:$remote_path $local_dst"
+    elif [ -n "$REMOTE_PASSWORD" ]; then
+        sshpass -p "$REMOTE_PASSWORD" scp \
+            -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+            "$user@$host:$remote_path" "$local_dst"
+    else
+        scp -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+            "$user@$host:$remote_path" "$local_dst"
+    fi
+}
+
 # Run a sudo command remotely using the sudo password
 sudo_ssh_cmd() {
     local user="$1" host="$2" cmd="$3"
@@ -280,7 +295,7 @@ scan_target_backends() {
             local bname
             bname=$(basename "$lib")
             echo "    Fetching: $bname"
-            scp_cmd "$user@$host:$lib" "$user" "$host" "$DEPLOY_STAGING/lib/" 2>/dev/null || true
+            scp_pull_cmd "$user" "$host" "$lib" "$DEPLOY_STAGING/lib/" 2>/dev/null || true
         done <<< "$ec_libs"
     else
         echo "  ✗ EtherCAT       — not installed (stub mode)"
