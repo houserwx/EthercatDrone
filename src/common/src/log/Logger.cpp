@@ -69,6 +69,9 @@ common::ThreadBuffer* Logger::registerThread(bool isRt)
                   << kMaxThreads << ")\n";
         return nullptr;
     }
+    if (threadBuffers_.size() <= registeredCount_) {
+        threadBuffers_.resize(kMaxThreads);
+    }
     ThreadInfo& info = threadBuffers_[registeredCount_];
     info.buffer = std::make_unique<common::ThreadBuffer>(common::kThreadBufferCapacity);
     info.priority = isRt ? Priority::RealTime : Priority::Normal;

@@ -1,0 +1,3 @@
+[submodule "thirdparty/ethercat"]
+	path = thirdparty/ethercat
+	url = https://github.com/igh-ethercat/ethercat.git

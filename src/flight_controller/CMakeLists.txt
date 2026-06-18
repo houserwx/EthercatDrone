@@ -45,8 +45,12 @@ target_compile_options(fc PRIVATE -Wall -Wextra -Wpedantic)
 
 target_link_libraries(fc PUBLIC common imu)
 
-if(ETHERCAT_LIB)
+if(ETHERCAT_AVAILABLE AND ETHERCAT_LIB)
     target_link_libraries(fc PRIVATE ${ETHERCAT_LIB})
+    target_compile_definitions(fc PRIVATE ETHERCAT_AVAILABLE)
+    if(ETHERCAT_INCLUDE_DIR)
+        target_include_directories(fc PRIVATE ${ETHERCAT_INCLUDE_DIR})
+    endif()
 endif()
 
 # gRPC proto compilation
