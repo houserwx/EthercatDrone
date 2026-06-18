@@ -1,54 +1,53 @@
-# EthercatDrone
-
-**Real-time EtherCAT-enabled drone / robotic control platform**
-
-A high-performance, deterministic control system combining EtherCAT fieldbus with drone/multirotor propulsion for advanced robotics, industrial automation, and research applications.
-
-## Overview
-
-This project integrates **EtherCAT** (sub-100µs cycle times) with modern drone hardware for precise, synchronized motor control, sensor fusion, and real-time decision making. It is designed to run on embedded platforms such as Toradex i.MX8/95 modules with custom real-time C++ controllers.
-
-Key goals:
-- Deterministic, low-latency motor control
-- Rich telemetry and black-box logging
-- Modular architecture for easy hardware swapping
-- Support for custom flight algorithms and payloads
-
-## Features
-
-- Full EtherCAT master support with PDO mapping for motor ESCs
-- High-rate sensor integration (IMU, GPS, etc.)
-- Real-time FOC motor control via supported ESCs
-- Fault detection and graceful degradation
-- Configurable via Blazor UI or configuration files
-- Bi-directional Postgres replication for config/outcome data (optional)
-- Designed for 3+ days of independent operation with resync
-
-## Hardware Requirements
-
-- **Main Controller**: Toradex i.MX8/95 or equivalent ARM board
-- **Fieldbus**: EtherCAT (or CAN / UAVCAN fallback)
-- **Propulsion**: Compatible high-power ESCs/motors (Hobbywing X-series, VESC, or custom)
-- **Sensors**: IMU, GPS, barometer, current/voltage monitoring
-
-## Software Stack
-
-- **Language**: C++ (real-time core)
-- **UI**: C# Blazor
-- **Database**: Postgres + pglogical
-- **Build**: CMake / NativeAOT where applicable
-
-## Getting Started
-
-1. Clone the repository
-   ```bash
-   git clone https://github.com/houserwx/EthercatDrone.git
-
 # EtherCatDrone
 
 Hard real-time EtherCAT-controlled UAV platform with dual-master redundancy, deterministic control loops, and gRPC telemetry.
 
-## Architecture
+---
+
+## Hardware Architecture
+
+Three embedded devices, two hard-real-time and one best-effort:
+
+```
+┌──────────────────────┐   ┌──────────────────────┐
+│  RT Flyboard A       │   │  RT Flyboard B       │
+│  (Primary Master)    │◄─►│  (Hot-Standby Master)│
+│  • EtherCAT master   │   │  • EtherCAT master   │
+│  • IMU + Gyro        │   │  • IMU + Gyro        │
+│  • Motor/ESC control │   │  • Motor/ESC control │
+│  • Safety interlocks │   │  • Safety interlocks │
+└──────────┬───────────┘   └──────────┬───────────┘
+           │ EtherCAT bus              │ Heartbeat
+           ▼                           │ sync
+     ESCs / Motors / Sensors          │
+                                      ▼
+                       ┌──────────────────────┐
+                       │  Companion Board     │
+                       │  (UI / Vision)       │
+                       │  • gRPC telemetry UI │
+                       │  • Machine vision    │
+                       │  • Targeting / VIO   │
+                       │  • Mission planning  │
+                       └──────────────────────┘
+```
+
+| Board | Role | RT Class | Software |
+|---|---|---|---|
+| **Flyboard A** | Primary EtherCAT master, IMU, motor control | Hard RT (`SCHED_FIFO`) | `drone_app` — C++20 |
+| **Flyboard B** | Hot-standby master, redundant IMU, motor control | Hard RT (`SCHED_FIFO`) | `drone_app` — C++20 |
+| **Companion** | UI, vision, targeting, mission planning | Best-effort | gRPC clients, Blazor UI (TBD) |
+
+### Hardware Requirements
+
+- **Flyboards (×2)**: Raspberry Pi 5 / CM5 or equivalent with EtherCAT HAT (SOEM or Kunbus/EDATEC compatible)
+- **Companion Board**: Toradex i.MX8/95, Jetson Orin, or equivalent with GPU for vision
+- **Propulsion**: High-power ESCs/motors compatible with EtherCAT (Hobbywing X-series, VESC, or custom)
+- **Sensors**: EtherCAT/I²C IMU per flyboard, GPS on companion
+- **Network**: Ethernet switch for flyboard heartbeat sync; separate link to companion for gRPC telemetry
+
+---
+
+## Software Architecture
 
 Modular monorepo with internal CMake libraries:
 
@@ -65,6 +64,8 @@ navi  →  flight_controller  →  imu  →  common
 | `libfc` | PDO system, EtherCAT, motors, safety, redundancy, RT app |
 | `libnavi` | VIO, path planning, high-level commands (Phase 2+) |
 
+---
+
 ## Requirements
 
 | Tool | Version | Notes |
@@ -74,6 +75,8 @@ navi  →  flight_controller  →  imu  →  common
 | Ninja | latest | Preferred generator |
 | IgH EtherCAT Master | latest | Required for EtherCAT hardware; not needed for simulated mode |
 | gRPC + protobuf | 1.51.1 / 3.21.x | `apt install libgrpc++-dev protobuf-compiler-grpc` |
+
+---
 
 ## Build
 
@@ -86,6 +89,8 @@ navi  →  flight_controller  →  imu  →  common
 ./build.sh --fix              # Apply safe clang-tidy fixes automatically
 ```
 
+---
+
 ## Run
 
 ```bash
@@ -93,6 +98,8 @@ navi  →  flight_controller  →  imu  →  common
 ./build/debug-linux/drone_app config/factory-test/hardware.json  # alternate config
 ./build/debug-linux/bench_test                                   # sim-only bench test
 ```
+
+---
 
 ## gRPC Services (port 50051)
 
@@ -102,43 +109,39 @@ navi  →  flight_controller  →  imu  →  common
 | **ConfigService** | `ethercat_drone.config.v1` | Config CRUD + `SaveAllConfigs`, `RequestRestart` |
 | **StationService** | `ethercat_drone.station.v1` | `StreamStationChannel` — bidirectional trigger/result relay |
 
-## Run Tests
+---
+
+## Tests
 
 ```bash
 cd build/debug-linux && ctest --output-on-failure
 ```
 
+---
+
 ## Documentation
 
-- [Phase 1 WBS](docs/WBS1.md) — Detailed work breakdown structure
 - [Project Overview](docs/Overview.md) — High-level phased development plan
+- [Phase 1 WBS](docs/WBS1.md) — Bench / core proof of concept
+- [Phase 2 Mission Planning](docs/WBS1.3.md) — Navigation and mission capabilities
+- [Copilot Agent Guidelines](Copilot-Agent-Code-Quality-Guidelines.md) — RT determinism rules, coding standards
 
-## Code Quality
+---
 
-See [Copilot-Agent-Code-Quality-Guidelines.md](Copilot-Agent-Code-Quality-Guidelines.md) for the coding standards enforced in this project — zero-allocation RT paths, freeze-the-world pattern, `noexcept` everywhere in the hot path.
+## Key RT Design Principles
 
-Repository Structure
+- **Zero-allocation RT paths** — All heap allocation completes before the RT loop starts
+- **Freeze-the-world pattern** — No mutable shared state during `rtCycle()`
+- **`noexcept` hot path** — Every method in the call graph from `run()` through `tick()` is `noexcept`
+- **Sub-100µs control loops** — Proven on bench with both real EtherCAT and simulated backends
+- **Dual-master failover** — < 50µs switchover with no loss of motor control
 
-/src/ — Core real-time C++ code
-/ui/ — Blazor web interface
-/docs/ — Architecture, setup, and integration guides
-/config/ — Example configurations
-/tools/ — Utilities and scripts
+---
 
-Roadmap
+## License
 
- Full DroneCAN / Cyphal support
- Advanced trajectory planning
- Multi-vehicle coordination
- ... (add your items)
-
-Contributing
-Pull requests are welcome. For major changes, please open an issue first.
-License
 Copyright © 2026 Jeffrey Houser. All rights reserved.
-This repository contains proprietary code. No part of this project may be copied, modified, or distributed without explicit written permission from the author.
-See LICENSE for details.
-Contact
 
-GitHub Issues (preferred for technical questions)
-LinkedIn: Jeffrey Houser
+This repository contains proprietary code. No part of this project may be copied, modified, or distributed without explicit written permission from the author.
+
+https://www.linkedin.com/in/jeffrey-houser-0558855/
