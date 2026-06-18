@@ -245,17 +245,16 @@ bool GPIOAdapter::requestLine(GPIOLine& line, size_t index) noexcept
     struct gpiod_line* l = gpiod_chip_get_line(chip, line.offset);
     if (!l) return false;
 
-    // Configure direction using v2 request API
-    struct gpiod_line_request_config req_config = GPIOD_LINE_REQUEST_CONFIG_INITIALIZER;
-    req_config.consumer = consumer;
-
+    // Use simple request functions (libgpiod 1.0+ API)
     if (line.direction == LineDirection::OUTPUT) {
-        req_config.request_type = GPIOD_LINE_REQUEST_DIRECTION_OUTPUT;
         int init_val = line.initialVal ? 1 : 0;
-        gpiod_line_request_output_mode(l, &req_config, init_val);
+        if (gpiod_line_request_output(l, consumer, init_val) != 0) {
+            return false;
+        }
     } else {
-        req_config.request_type = GPIOD_LINE_REQUEST_DIRECTION_INPUT;
-        gpiod_line_request_input(l, &req_config);
+        if (gpiod_line_request_input(l, consumer) != 0) {
+            return false;
+        }
     }
 
     handles_[index].gpiod_line = l;
