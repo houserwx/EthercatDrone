@@ -7,14 +7,11 @@
 #include <algorithm>
 
 // Try to include libgpiod — fall back gracefully if unavailable
+// Note: libgpiod 1.6+ uses the v2 API (gpiod_chip_open, gpiod_line_get_value, etc.)
+// Older versions used the v1 API (gpiod_chip_open_by_path, gpiod_get_line_value, etc.)
+// The v2 API is the standard since libgpiod 1.0 (2019) and is what Pi 4/5 ship.
 #ifdef GPIO_LIBGPIOD_AVAILABLE
-    // libgpiod v2 API (newer)
-    #ifdef LIBGPIOD_V2
-    #include <gpiod.h>
-    #else
-    // libgpiod v1 API (older, Pi 4)
-    #include <gpiod.h>
-    #endif
+#include <gpiod.h>
 #endif
 
 namespace fc::gpio {
@@ -112,29 +109,22 @@ bool gpioChipAvailable(BoardVariant variant) noexcept
 #ifdef GPIO_LIBGPIOD_AVAILABLE
     const std::string chipPath = gpioChipPath(variant);
 
-    // Try to open the GPIO chip
-    #ifdef LIBGPIOD_V2
+    // Try to open the GPIO chip (libgpiod v2 API — standard since 2019)
     struct gpiod_chip* chip = gpiod_chip_open(chipPath.c_str());
     if (chip) {
         gpiod_chip_close(chip);
         return true;
     }
-    #else
-    // libgpiod v1
-    struct gpiod_chip* chip = gpiod_chip_open_by_path(chipPath.c_str());
-    if (chip) {
-        gpiod_chip_close(chip);
-        return true;
-    }
-    #endif
 #endif
 
     // Fallback: just check if the device file exists
-    const std::string chipPath = gpioChipPath(variant);
-    FILE* f = fopen(chipPath.c_str(), "r");
-    if (f) {
-        fclose(f);
-        return true;
+    {
+        const std::string chipPath = gpioChipPath(variant);
+        FILE* f = fopen(chipPath.c_str(), "r");
+        if (f) {
+            fclose(f);
+            return true;
+        }
     }
 
     return false;

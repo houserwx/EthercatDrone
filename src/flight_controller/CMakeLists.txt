@@ -80,31 +80,13 @@ else()
 endif()
 
 if(LIBGPIOD_FOUND)
-    # Detect libgpiod version from cache override or header inspection
-    if(LIBGPIOD_VERSION)
-        # Version passed explicitly by deploy.sh
-        if(LIBGPIOD_VERSION STREQUAL "v2")
-            target_compile_definitions(fc PRIVATE GPIO_LIBGPIOD_AVAILABLE LIBGPIOD_V2)
-            message(STATUS "libgpiod v2 (from target) — GPIO adapter enabled with v2 API")
-        else()
-            target_compile_definitions(fc PRIVATE GPIO_LIBGPIOD_AVAILABLE)
-            message(STATUS "libgpiod v1 (from target) — GPIO adapter enabled with v1 API")
-        endif()
-    elseif(LIBGPIOD_INCLUDE_DIR)
-        file(STRINGS "${LIBGPIOD_INCLUDE_DIR}/gpiod.h" _gpiod_version_line
-             REGEX "GPIOD_API_VERSION|GPIOD_VERSION")
-        if(_gpiod_version_line MATCHES "GPIOD_API_VERSION.*2")
-            target_compile_definitions(fc PRIVATE GPIO_LIBGPIOD_AVAILABLE LIBGPIOD_V2)
-            message(STATUS "libgpiod v2 found — GPIO adapter enabled with v2 API")
-        else()
-            target_compile_definitions(fc PRIVATE GPIO_LIBGPIOD_AVAILABLE)
-            message(STATUS "libgpiod found — GPIO adapter enabled (v1 API)")
-        endif()
-    else()
-        # No header available (cross-compile), default to v1 (safe fallback)
-        target_compile_definitions(fc PRIVATE GPIO_LIBGPIOD_AVAILABLE)
-        message(STATUS "libgpiod found (no header for version check, assuming v1 API)")
-    endif()
+    # libgpiod 1.0+ (2019) uses the v2 API exclusively.
+    # The "v1" API was removed from libgpiod in favor of the v2 API.
+    # Pi 4 ships with libgpiod ~1.6.x which is v2 API.
+    # Pi 5 ships with libgpiod ~2.x which is v2 API.
+    # We always use the v2 API when libgpiod is available.
+    target_compile_definitions(fc PRIVATE GPIO_LIBGPIOD_AVAILABLE)
+    message(STATUS "libgpiod found — GPIO adapter enabled (v2 API)")
     target_link_libraries(fc PRIVATE ${LIBGPIOD_LIB})
     if(LIBGPIOD_INCLUDE_DIR)
         target_include_directories(fc PRIVATE ${LIBGPIOD_INCLUDE_DIR})

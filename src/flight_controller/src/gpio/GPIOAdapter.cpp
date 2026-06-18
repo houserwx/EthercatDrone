@@ -8,19 +8,12 @@
 #include <unistd.h>
 
 // Try to include libgpiod — fall back gracefully if unavailable
+// libgpiod 1.0+ uses the v2 API (gpiod_chip_open, gpiod_line_get_value, etc.)
+// This is the standard API since 2019, shipped on both Pi 4 and Pi 5.
 #ifdef GPIO_LIBGPIOD_AVAILABLE
-    // libgpiod v2 API (newer, Pi 5)
-    #ifdef LIBGPIOD_V2
-    #include <gpiod.h>
-    #define HAS_LIBGPIOD 2
-    #else
-    // libgpiod v1 API (older, Pi 4)
-    #include <gpiod.h>
-    #define HAS_LIBGPIOD 1
-    #endif
-#endif
-
-#ifndef HAS_LIBGPIOD
+#include <gpiod.h>
+#define HAS_LIBGPIOD 2
+#else
 #define HAS_LIBGPIOD 0
 #endif
 
@@ -153,14 +146,7 @@ void GPIOAdapter::onBeforeReadInputs() noexcept
         if (lines_[i].direction != LineDirection::INPUT) continue;
         if (!handles_[i].gpiod_line) continue;
 
-        int val = 0;
-        #if HAS_LIBGPIOD == 2
-        // libgpiod v2 API
-        val = gpiod_line_get_value(handles_[i].gpiod_line);
-        #else
-        // libgpiod v1 API
-        val = gpiod_get_line_value(static_cast<struct gpiod_line*>(handles_[i].gpiod_line));
-        #endif
+        int val = gpiod_line_get_value(static_cast<struct gpiod_line*>(handles_[i].gpiod_line));
 
         if (lines_[i].entry && lines_[i].entry->image) {
             *(uint8_t*)lines_[i].entry->image = static_cast<uint8_t>(val != 0);
@@ -196,13 +182,7 @@ void GPIOAdapter::onAfterWriteOutputs() noexcept
             val = (*(uint8_t*)lines_[i].entry->image) != 0;
         }
 
-        #if HAS_LIBGPIOD == 2
-        // libgpiod v2 API
-        gpiod_line_set_value(handles_[i].gpiod_line, val);
-        #else
-        // libgpiod v1 API
-        gpiod_set_line_value(static_cast<struct gpiod_line*>(handles_[i].gpiod_line), val);
-        #endif
+        gpiod_line_set_value(static_cast<struct gpiod_line*>(handles_[i].gpiod_line), val);
     }
 #endif
 }
@@ -240,19 +220,9 @@ int GPIOAdapter::registerLine(uint32_t gpio_offset,
 bool GPIOAdapter::openChip() noexcept
 {
 #if HAS_LIBGPIOD
-    #if HAS_LIBGPIOD == 2
-    // libgpiod v2 API
     struct gpiod_chip* chip = gpiod_chip_open(chipPath_.c_str());
-    #else
-    // libgpiod v1 API
-    struct gpiod_chip* chip = gpiod_chip_open_by_path(chipPath_.c_str());
-    #endif
+    if (!chip) return false;
 
-    if (!chip) {
-        return false;
-    }
-
-    // Store chip handle in first position (shared by all lines)
     handles_[0].gpiod_chip = chip;
     return true;
 #else
@@ -266,83 +236,29 @@ bool GPIOAdapter::openChip() noexcept
 bool GPIOAdapter::requestLine(GPIOLine& line, size_t index) noexcept
 {
 #if HAS_LIBGPIOD
-    if (!handles_[0].gpiod_chip) return false;
+    auto* chip = static_cast<struct gpiod_chip*>(handles_[0].gpiod_chip);
+    if (!chip) return false;
 
-    // Configure consumer label and direction
     const char* consumer = "EtherCatDrone";
-    unsigned int flags = 0;
+
+    // Get the line handle
+    struct gpiod_line* l = gpiod_chip_get_line(chip, line.offset);
+    if (!l) return false;
+
+    // Configure direction using v2 request API
+    struct gpiod_line_request_config req_config = GPIOD_LINE_REQUEST_CONFIG_INITIALIZER;
+    req_config.consumer = consumer;
 
     if (line.direction == LineDirection::OUTPUT) {
-        #if HAS_LIBGPIOD == 2
-        struct gpiod_line_request_config req_config = GPIOD_LINE_REQUEST_CONFIG_INITIALIZER;
-        req_config.consumer = consumer;
         req_config.request_type = GPIOD_LINE_REQUEST_DIRECTION_OUTPUT;
-
-        struct gpiod_line_settings* settings = gpiod_line_settings_alloc(1);
-        if (!settings) return false;
-        gpiod_line_settings_set_output_mode(settings, line.offset,
-                                             line.initialVal ? GPIOD_LINE_SETTINGS_BIAS_PULL_UP : GPIOD_LINE_SETTINGS_BIAS_PULL_DOWN);
-
-        struct gpiod_line_request* req = gpiod_chip_get_line_request(
-            static_cast<struct gpiod_chip*>(handles_[0].gpiod_chip),
-            &req_config);
-        if (!req) {
-            gpiod_line_settings_free(settings);
-            return false;
-        }
-
-        struct gpiod_line* l = gpiod_chip_get_line(
-            static_cast<struct gpiod_chip*>(handles_[0].gpiod_chip),
-            line.offset);
-        if (!l) {
-            gpiod_line_request_put(req);
-            gpiod_line_settings_free(settings);
-            return false;
-        }
-
-        handles_[index].gpiod_line = l;
-        gpiod_line_settings_free(settings);
-        #else
-        // libgpiod v1 API
-        struct gpiod_line* l = gpiod_chip_get_line(
-            static_cast<struct gpiod_chip*>(handles_[0].gpiod_chip),
-            line.offset);
-        if (!l) return false;
-
-        if (gpiod_line_request_output(l, consumer, line.initialVal ? 1 : 0) != 0) {
-            return false;
-        }
-
-        handles_[index].gpiod_line = l;
-        #endif
+        int init_val = line.initialVal ? 1 : 0;
+        gpiod_line_request_output_mode(l, &req_config, init_val);
     } else {
-        // Input line
-        #if HAS_LIBGPIOD == 2
-        struct gpiod_line_request_config req_config = GPIOD_LINE_REQUEST_CONFIG_INITIALIZER;
-        req_config.consumer = consumer;
         req_config.request_type = GPIOD_LINE_REQUEST_DIRECTION_INPUT;
-
-        struct gpiod_line* l = gpiod_chip_get_line(
-            static_cast<struct gpiod_chip*>(handles_[0].gpiod_chip),
-            line.offset);
-        if (!l) return false;
-
-        handles_[index].gpiod_line = l;
-        #else
-        // libgpiod v1 API
-        struct gpiod_line* l = gpiod_chip_get_line(
-            static_cast<struct gpiod_chip*>(handles_[0].gpiod_chip),
-            line.offset);
-        if (!l) return false;
-
-        if (gpiod_line_request_input(l, consumer) != 0) {
-            return false;
-        }
-
-        handles_[index].gpiod_line = l;
-        #endif
+        gpiod_line_request_input(l, &req_config);
     }
 
+    handles_[index].gpiod_line = l;
     return true;
 #else
     (void)line;
@@ -358,11 +274,7 @@ void GPIOAdapter::closeChip() noexcept
 {
 #if HAS_LIBGPIOD
     if (handles_.size() > 0 && handles_[0].gpiod_chip) {
-        #if HAS_LIBGPIOD == 2
         gpiod_chip_close(static_cast<struct gpiod_chip*>(handles_[0].gpiod_chip));
-        #else
-        gpiod_chip_close(static_cast<struct gpiod_chip*>(handles_[0].gpiod_chip));
-        #endif
         handles_[0].gpiod_chip = nullptr;
     }
 #endif
