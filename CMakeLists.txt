@@ -6,17 +6,38 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # ---- libdynamichardware submodule ------------------------------------------
 # Handles: PDO system, backend adapters (EtherCAT, GPIO, I2C, SPI, Simulated),
 #          RT utilities (SignalProcess, VectorBuffer), nlohmann_json (vendored).
-# Optional deps detected by submodule: libethercat, libgpiod.
+# The submodule detects and links optional deps: libethercat, libgpiod.
+# It sets ETHERCAT_AVAILABLE, ETHERCAT_LIB, ETHERCAT_INCLUDE_DIR,
+# LIBGPIOD_FOUND, LIBGPIOD_LIB, LIBGPIOD_INCLUDE_DIR as cache variables
+# that project targets consume below.
+#
+# For cross-compilation, pass these via CMake cache BEFORE add_subdirectory:
+#   -DETHERCAT_LIB=<aarch64 libethercat.so>
+#   -DETHERCAT_INCLUDE_DIR=<path to ecrt.h>
+#   -DLIBGPIOD_LIB=<aarch64 libgpiod.so>
+#   -DLIBGPIOD_INCLUDE_DIR=<path to gpiod.h>
+
+# Ensure include dirs point to local headers for cross-compile
+# (toolchain can't search host paths, submodule needs them pre-set).
+if(CMAKE_CROSSCOMPILING)
+    if(NOT ETHERCAT_INCLUDE_DIR)
+        set(LOCAL_ETHERCAT_INCLUDE "${CMAKE_SOURCE_DIR}/thirdparty/ethercat/include")
+        if(EXISTS "${LOCAL_ETHERCAT_INCLUDE}/ecrt.h")
+            set(ETHERCAT_INCLUDE_DIR "${LOCAL_ETHERCAT_INCLUDE}" CACHE PATH "EtherCAT header dir" FORCE)
+        endif()
+    endif()
+    # LIBGPIOD_INCLUDE_DIR may be passed via deploy.sh staging area,
+    # or the submodule will search common paths as fallback.
+endif()
+
 add_subdirectory(thirdparty/libdynamichardware)
 
-# Propagate optional dependency flags from submodule to project targets
-# (ETHERCAT_AVAILABLE, GPIO_LIBGPIOD_AVAILABLE are needed by project code).
-# The submodule detects these internally; we mirror them for project targets.
+# After submodule configure, ensure fallback defaults for project targets
 if(NOT DEFINED ETHERCAT_AVAILABLE)
-    set(ETHERCAT_AVAILABLE OFF)
+    set(ETHERCAT_AVAILABLE OFF CACHE BOOL "EtherCAT available" FORCE)
 endif()
 if(NOT DEFINED LIBGPIOD_FOUND)
-    set(LIBGPIOD_FOUND FALSE)
+    set(LIBGPIOD_FOUND OFF CACHE BOOL "libgpiod found" FORCE)
 endif()
 
 # gRPC and Protobuf (optional — stub mode when absent)

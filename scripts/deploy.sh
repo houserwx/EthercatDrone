@@ -500,7 +500,8 @@ CMAKE_FLAGS=(
     -DCMAKE_MAKE_PROGRAM="$(command -v ninja)"
 )
 
-# If we fetched aarch64 libethercat from target, pass it to CMake for linking
+# If we fetched aarch64 libethercat from target, pass lib + headers to CMake.
+# The submodule's CMake consumes these and handles linking internally.
 if [ "$HAVE_ETHERCAT" = true ] && [ -d "$DEPLOY_STAGING/lib" ]; then
     ETHERCAT_AARCH_LIB=$(find "$DEPLOY_STAGING/lib" -maxdepth 1 -name "libethercat.so*" -type f ! -name '*.so' 2>/dev/null | head -1)
     if [ -z "$ETHERCAT_AARCH_LIB" ]; then
@@ -512,6 +513,14 @@ if [ "$HAVE_ETHERCAT" = true ] && [ -d "$DEPLOY_STAGING/lib" ]; then
         if [ -n "$ARCH_CHECK" ]; then
             ok "Using aarch64 libethercat for cross-link: $(basename "$ETHERCAT_AARCH_LIB")"
             CMAKE_FLAGS+=("-DETHERCAT_LIB=$ETHERCAT_AARCH_LIB")
+            # Always pass EtherCAT include dir (submodule needs ecrt.h)
+            ETHERCAT_INC="$ROOT_DIR/thirdparty/ethercat/include"
+            if [ -f "$ETHERCAT_INC/ecrt.h" ]; then
+                ok "Using EtherCAT headers from thirdparty/ethercat/include"
+                CMAKE_FLAGS+=("-DETHERCAT_INCLUDE_DIR=$ETHERCAT_INC")
+            else
+                warn "ecrt.h not found — EtherCAT stub mode"
+            fi
         else
             warn "Fetched libethercat is not aarch64 — building stub mode"
         fi

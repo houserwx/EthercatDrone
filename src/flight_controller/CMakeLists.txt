@@ -36,28 +36,16 @@ target_compile_options(fc PRIVATE -Wall -Wextra -Wpedantic)
 
 target_link_libraries(fc PUBLIC common imu DynamicHardware::dynamichardware)
 
-if(LIBGPIOD_FOUND)
-    # libgpiod 1.0+ (2019) uses the v2 API exclusively.
-    # The "v1" API was removed from libgpiod in favor of the v2 API.
-    # Pi 4 ships with libgpiod ~1.6.x which is v2 API.
-    # Pi 5 ships with libgpiod ~2.x which is v2 API.
-    # We always use the v2 API when libgpiod is available.
-    target_compile_definitions(fc PRIVATE GPIO_LIBGPIOD_AVAILABLE)
-    message(STATUS "libgpiod found — GPIO adapter enabled (v2 API)")
-    target_link_libraries(fc PRIVATE ${LIBGPIOD_LIB})
-    if(LIBGPIOD_INCLUDE_DIR)
-        target_include_directories(fc PRIVATE ${LIBGPIOD_INCLUDE_DIR})
-    endif()
-else()
-    message(STATUS "libgpiod not available — GPIO adapter will use stub mode")
-endif()
-
-if(ETHERCAT_AVAILABLE AND ETHERCAT_LIB)
-    target_link_libraries(fc PRIVATE ${ETHERCAT_LIB})
+# Compile definitions propagated from submodule.
+# The submodule (DynamicHardware::dynamichardware) already links libethercat/libgpiod
+# and sets ETHERCAT_AVAILABLE / GPIO_LIBGPIOD_AVAILABLE as PUBLIC definitions.
+# If project code needs these definitions explicitly (e.g., for #ifdef guards in
+# project-specific headers), propagate them here too.
+if(ETHERCAT_AVAILABLE)
     target_compile_definitions(fc PRIVATE ETHERCAT_AVAILABLE)
-    if(ETHERCAT_INCLUDE_DIR)
-        target_include_directories(fc PRIVATE ${ETHERCAT_INCLUDE_DIR})
-    endif()
+endif()
+if(LIBGPIOD_FOUND)
+    target_compile_definitions(fc PRIVATE GPIO_LIBGPIOD_AVAILABLE)
 endif()
 
 # gRPC proto compilation
