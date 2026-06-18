@@ -354,21 +354,81 @@ scan_target_backends() {
         echo "  ✓ SPI            — kernel module available (stub backend, no extra libs)"
     fi
 
-    # --- GPIO (libgpiod or sysfs) ---
+    # --- Detect Raspberry Pi variant ---
+    local pi_model
+    pi_model=$(ssh_cmd "$user" "$host" \
+        'cat /proc/device-tree/model 2>/dev/null || cat /proc/cpuinfo 2>/dev/null | grep Hardware | head -1' || true)
+    local pi_variant="unknown"
+    if [[ "$pi_model" == *"Raspberry Pi 5"* ]] || [[ "$pi_model" == *"BCM2712"* ]]; then
+        pi_variant="pi5"
+    elif [[ "$pi_model" == *"Raspberry Pi 4"* ]] || [[ "$pi_model" == *"BCM2711"* ]]; then
+        pi_variant="pi4"
+    fi
+
+    if [[ "$pi_variant" != "unknown" ]]; then
+        echo "  📋 Pi Variant    — $(ssh_cmd "$user" "$host" 'cat /proc/device-tree/model 2>/dev/null | tr -d "\0"' || echo 'unknown')"
+    fi
+
+    # --- GPIO (libgpiod + gpiochip) ---
     local gpio_check
     gpio_check=$(ssh_cmd "$user" "$host" \
-        "dpkg -l | grep -q libgpiod && echo gpiod || ls /dev/gpiochip* 2>/dev/null | head -1 || echo sysfs" || true)
-    if [ -n "$gpio_check" ]; then
-        HAVE_GPIO=true
-        local gpio_type
-        gpio_type=$(echo "$gpio_check" | head -1)
-        if [[ "$gpio_type" == *"gpiod"* ]]; then
-            echo "  ✓ GPIO           — libgpiod available"
+        'dpkg -l 2>/dev/null | grep -q "libgpiod" && echo gpiod_pkg || { find /usr/lib /usr/local/lib -maxdepth 3 -name "libgpiod.so*" \( -type f -o -type l \) 2>/dev/null | head -1 && echo gpiod_lib; }' || true)
+
+    local gpiochip_check
+    gpiochip_check=$(ssh_cmd "$user" "$host" 'ls /dev/gpiochip* 2>/dev/null | head -1' || true)
+
+    if [[ "$pi_variant" == "pi4" ]] || [[ "$pi_variant" == "pi5" ]]; then
+        # Pi detected — GPIO is expected
+        if [[ "$gpio_check" == *"gpiod"* ]]; then
+            HAVE_GPIO=true
+            echo "  ✓ GPIO           — libgpiod installed on Pi $([ "$pi_variant" = "pi5" ] && echo "5" || echo "4")"
+
+            # Fetch libgpiod for deployment
+            mkdir -p "$DEPLOY_STAGING/lib" "$DEPLOY_STAGING/include"
+            local gpiod_libs
+            gpiod_libs=$(ssh_cmd "$user" "$host" \
+                'find /usr/lib /usr/local/lib -maxdepth 4 -name "libgpiod.so*" \( -type f -o -type l \) 2>/dev/null' || true)
+            while IFS= read -r lib; do
+                [ -z "$lib" ] && continue
+                local bname
+                bname=$(basename "$lib")
+                echo "    Fetching: $bname"
+                scp_pull_cmd "$user" "$host" "$lib" "$DEPLOY_STAGING/lib/" 2>/dev/null || true
+            done <<< "$gpiod_libs"
+
+            # Fetch gpiod.h header for CMake version detection
+            local gpiod_header
+            gpiod_header=$(ssh_cmd "$user" "$host" 'find /usr/include /usr/local/include -maxdepth 2 -name "gpiod.h" 2>/dev/null | head -1' || true)
+            if [ -n "$gpiod_header" ]; then
+                echo "    Fetching: gpiod.h"
+                scp_pull_cmd "$user" "$host" "$gpiod_header" "$DEPLOY_STAGING/include/" 2>/dev/null || true
+            fi
+
+            # Detect libgpiod version on target
+            local gpiod_ver
+            gpiod_ver=$(ssh_cmd "$user" "$host" 'pkg-config --modversion libgpiod 2>/dev/null || dpkg -s libgpiod2 2>/dev/null | grep Version | head -1 || echo unknown' || true)
+            echo "    libgpiod version: $gpiod_ver"
         else
-            echo "  ✓ GPIO           — /dev/gpiochip* available (sysfs)"
+            # Pi detected but libgpiod missing — this is a deployment issue
+            HAVE_GPIO=true  # Still set true so we can warn in setup.sh
+            echo "  ⚠ GPIO           — Pi detected but libgpiod NOT installed"
+            echo "    Install on target: sudo apt install libgpiod-dev"
+            echo "    (GPIO adapter will run in stub mode without libgpiod)"
+        fi
+
+        if [ -n "$gpiochip_check" ]; then
+            echo "    GPIO chip: $gpiochip_check"
+        else
+            echo "    ⚠ /dev/gpiochip* not found — enable GPIO overlay"
         fi
     else
-        echo "  ✗ GPIO           — no gpiochip devices found"
+        # Non-Pi platform
+        if [ -n "$gpiochip_check" ]; then
+            HAVE_GPIO=true
+            echo "  ✓ GPIO           — /dev/gpiochip* available"
+        else
+            echo "  ✗ GPIO           — no gpiochip devices found"
+        fi
     fi
 
     # --- CAN (SocketCAN) ---
@@ -462,6 +522,32 @@ else
     warn "EtherCAT not available on target — building stub mode"
 fi
 
+# If we fetched aarch64 libgpiod from target, pass it to CMake for linking
+if [ "$HAVE_GPIO" = true ] && [ -d "$DEPLOY_STAGING/lib" ]; then
+    GPIOD_AARCH_LIB=$(find "$DEPLOY_STAGING/lib" -maxdepth 1 -name "libgpiod.so*" -type f ! -name '*.so' 2>/dev/null | head -1)
+    if [ -z "$GPIOD_AARCH_LIB" ]; then
+        GPIOD_AARCH_LIB=$(find "$DEPLOY_STAGING/lib" -maxdepth 1 -name "libgpiod.so*" -type l 2>/dev/null | head -1)
+    fi
+    if [ -n "$GPIOD_AARCH_LIB" ]; then
+        ARCH_CHECK=$(file "$GPIOD_AARCH_LIB" | grep -o 'aarch64\|ARM' || true)
+        if [ -n "$ARCH_CHECK" ]; then
+            ok "Using aarch64 libgpiod for cross-link: $(basename "$GPIOD_AARCH_LIB")"
+            CMAKE_FLAGS+=("-DLIBGPIOD_LIB=$GPIOD_AARCH_LIB")
+
+            # Pass libgpiod version if known (v2 for Pi 5, v1 for Pi 4)
+            if [ -f "$DEPLOY_STAGING/include/gpiod.h" ]; then
+                CMAKE_FLAGS+=("-DLIBGPIOD_INCLUDE_DIR=$DEPLOY_STAGING/include")
+            fi
+        else
+            warn "Fetched libgpiod is not aarch64 — GPIO stub mode"
+        fi
+    else
+        warn "No libgpiod found in $DEPLOY_STAGING/lib — GPIO stub mode"
+    fi
+else
+    warn "GPIO libgpiod not available on target — GPIO stub mode"
+fi
+
 cmake "${CMAKE_FLAGS[@]}" 2>&1
 
 ok "CMake cross-configure complete"
@@ -528,9 +614,12 @@ if [ -d "$ROOT_DIR/config" ]; then
     echo "  config/*"
 fi
 
-# Note: lib/ directory was populated by fetch_ethercat_from_target (step 2)
+# Note: lib/ directory was populated by target scan (step 2)
 if [ -d "$DEPLOY_STAGING/lib" ]; then
-    echo "  lib/* (libethercat from target)"
+    lib_list=""
+    ls "$DEPLOY_STAGING/lib"/libethercat.so* &>/dev/null && lib_list="${lib_list}libethercat "
+    ls "$DEPLOY_STAGING/lib"/libgpiod.so* &>/dev/null && lib_list="${lib_list}libgpiod"
+    echo "  lib/* (${lib_list:-stub mode})"
 else
     echo "  lib/ (none — stub mode)"
 fi
@@ -576,6 +665,36 @@ elif find /usr/lib /usr/local/lib -maxdepth 4 -name "libethercat.so" 2>/dev/null
     ETHERCAT_MODE="active"
 else
     echo "✗ libethercat not found — EtherCAT adapter will be stub-only"
+fi
+
+# Configure libgpiod library path (GPIO adapter)
+GPIO_MODE="stub"
+
+# Check bundled lib/ first (from deploy fetch)
+if [ -d "$LIB_DIR" ] && ls "$LIB_DIR"/libgpiod.so* &>/dev/null; then
+    echo "✓ libgpiod found in lib/ — GPIO adapter will be active"
+    GPIO_MODE="active"
+    for so in "$LIB_DIR"/libgpiod.so.*; do
+        [ -f "$so" ] && cp -f "$so" "$LIB_DIR/libgpiod.so" 2>/dev/null || true
+    done
+# Check system-wide (libgpiod installed on target)
+elif ldconfig -p 2>/dev/null | grep -q libgpiod; then
+    echo "✓ libgpiod found system-wide (ldconfig) — GPIO adapter will be active"
+    GPIO_MODE="active"
+elif find /usr/lib /usr/local/lib -maxdepth 4 -name "libgpiod.so" 2>/dev/null | grep -q .; then
+    echo "✓ libgpiod found on disk — GPIO adapter will be active"
+    GPIO_MODE="active"
+else
+    echo "✗ libgpiod not found — GPIO adapter will be stub-only"
+    echo "  Install on target: sudo apt install libgpiod-dev"
+fi
+
+# Detect Pi variant
+PI_MODEL=$(cat /proc/device-tree/model 2>/dev/null | tr -d '\0' || echo "unknown")
+if [[ "$PI_MODEL" == *"Raspberry Pi"* ]]; then
+    echo "✓ Board: $PI_MODEL"
+else
+    echo "⚠ Board: unknown (not detected as Raspberry Pi)"
 fi
 
 # Verify binaries
@@ -631,7 +750,7 @@ if [ -d "$CONFIG_DIR" ]; then
 fi
 
 echo ""
-echo "=== Ready to run (EtherCAT: $ETHERCAT_MODE) ==="
+echo "=== Ready to run (EtherCAT: $ETHERCAT_MODE, GPIO: $GPIO_MODE) ==="
 echo "  $BIN_DIR/run.sh drone_app                                 # Default config"
 echo "  $BIN_DIR/run.sh drone_app config/default/hardware.json   # With config"
 echo "  $BIN_DIR/run.sh bench_test                                # Sim-only bench"

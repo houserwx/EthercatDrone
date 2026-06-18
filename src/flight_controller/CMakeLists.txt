@@ -50,27 +50,67 @@ target_compile_options(fc PRIVATE -Wall -Wextra -Wpedantic)
 
 target_link_libraries(fc PUBLIC common imu)
 
-# libgpiod — GPIO adapter (optional, stub mode when absent)
+# libgpiod — GPIO adapter (required for Pi 4/5 GPIO support)
 # Pi 4 uses libgpiod v1 API, Pi 5 uses libgpiod v2 API.
 # Both are compatible at header level for our abstraction.
-find_library(LIBGPIOD_LIB NAMES gpiod PATHS /usr/lib /usr/local/lib)
-find_path(LIBGPIOD_INCLUDE_DIR NAMES gpiod.h PATHS /usr/include /usr/local/include)
+#
+# When cross-compiling, libgpiod may be fetched from the target board
+# (like libethercat).  Deploy.sh passes -DLIBGPIOD_LIB=<path> and
+# -DLIBGPIOD_INCLUDE_DIR=<path> pointing to the fetched aarch64 files.
+# We also accept -DLIBGPIOD_VERSION=v1|v2 to skip header inspection
+# when the fetched headers might be stale or missing.
 
-if(LIBGPIOD_LIB AND LIBGPIOD_INCLUDE_DIR)
-    # Detect libgpiod version (v2 API has gpiod2.h or defines GPIOD_API_VERSION)
-    file(STRINGS "${LIBGPIOD_INCLUDE_DIR}/gpiod.h" _gpiod_version_line
-         REGEX "GPIOD_API_VERSION|GPIOD_VERSION")
-    if(_gpiod_version_line MATCHES "GPIOD_API_VERSION.*2")
-        target_compile_definitions(fc PRIVATE GPIO_LIBGPIOD_AVAILABLE LIBGPIOD_V2)
-        message(STATUS "libgpiod v2 found — GPIO adapter enabled with v2 API")
+# For cross-compilation: accept LIBGPIOD_LIB as a cache variable from deploy.sh
+if(CMAKE_CROSSCOMPILING)
+    if(LIBGPIOD_LIB AND EXISTS "${LIBGPIOD_LIB}")
+        set(LIBGPIOD_FOUND TRUE)
+        message(STATUS "Cross-compiling with libgpiod from target: ${LIBGPIOD_LIB}")
     else()
+        set(LIBGPIOD_FOUND FALSE)
+        message(STATUS "libgpiod not provided for cross-compile — GPIO adapter will use stub mode")
+    endif()
+else()
+    find_library(LIBGPIOD_LIB NAMES gpiod PATHS /usr/lib /usr/local/lib)
+    find_path(LIBGPIOD_INCLUDE_DIR NAMES gpiod.h PATHS /usr/include /usr/local/include)
+    if(LIBGPIOD_LIB AND LIBGPIOD_INCLUDE_DIR)
+        set(LIBGPIOD_FOUND TRUE)
+    else()
+        set(LIBGPIOD_FOUND FALSE)
+    endif()
+endif()
+
+if(LIBGPIOD_FOUND)
+    # Detect libgpiod version from cache override or header inspection
+    if(LIBGPIOD_VERSION)
+        # Version passed explicitly by deploy.sh
+        if(LIBGPIOD_VERSION STREQUAL "v2")
+            target_compile_definitions(fc PRIVATE GPIO_LIBGPIOD_AVAILABLE LIBGPIOD_V2)
+            message(STATUS "libgpiod v2 (from target) — GPIO adapter enabled with v2 API")
+        else()
+            target_compile_definitions(fc PRIVATE GPIO_LIBGPIOD_AVAILABLE)
+            message(STATUS "libgpiod v1 (from target) — GPIO adapter enabled with v1 API")
+        endif()
+    elseif(LIBGPIOD_INCLUDE_DIR)
+        file(STRINGS "${LIBGPIOD_INCLUDE_DIR}/gpiod.h" _gpiod_version_line
+             REGEX "GPIOD_API_VERSION|GPIOD_VERSION")
+        if(_gpiod_version_line MATCHES "GPIOD_API_VERSION.*2")
+            target_compile_definitions(fc PRIVATE GPIO_LIBGPIOD_AVAILABLE LIBGPIOD_V2)
+            message(STATUS "libgpiod v2 found — GPIO adapter enabled with v2 API")
+        else()
+            target_compile_definitions(fc PRIVATE GPIO_LIBGPIOD_AVAILABLE)
+            message(STATUS "libgpiod found — GPIO adapter enabled (v1 API)")
+        endif()
+    else()
+        # No header available (cross-compile), default to v1 (safe fallback)
         target_compile_definitions(fc PRIVATE GPIO_LIBGPIOD_AVAILABLE)
-        message(STATUS "libgpiod found — GPIO adapter enabled (v1 API)")
+        message(STATUS "libgpiod found (no header for version check, assuming v1 API)")
     endif()
     target_link_libraries(fc PRIVATE ${LIBGPIOD_LIB})
-    target_include_directories(fc PRIVATE ${LIBGPIOD_INCLUDE_DIR})
+    if(LIBGPIOD_INCLUDE_DIR)
+        target_include_directories(fc PRIVATE ${LIBGPIOD_INCLUDE_DIR})
+    endif()
 else()
-    message(STATUS "libgpiod not found — GPIO adapter will use stub mode")
+    message(STATUS "libgpiod not available — GPIO adapter will use stub mode")
 endif()
 
 if(ETHERCAT_AVAILABLE AND ETHERCAT_LIB)
