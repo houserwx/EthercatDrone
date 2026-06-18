@@ -616,8 +616,8 @@ deploy_to_host() {
         ok "Connected to $host"
     fi
 
-    # Create remote directory
-    ssh_cmd "$user" "$host" "mkdir -p '$deploy_dir'"
+    # Create remote directory structure (scp -r won't create intermediate dirs)
+    ssh_cmd "$user" "$host" "mkdir -p '$deploy_dir'/'bin' 'config' 'scripts' 'lib' 'logs'"
 
     # Upload deployment package
     scp_dir_cmd "$DEPLOY_STAGING/." "$user" "$host" "$deploy_dir/"
