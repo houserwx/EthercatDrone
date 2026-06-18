@@ -265,8 +265,8 @@ scan_target_backends() {
     # --- EtherCAT (IgH Master) ---
     local ec_check
     ec_check=$(ssh_cmd "$user" "$host" \
-        "dpkg -l | grep -q ethercat && echo yes || find /usr/lib /usr/local/lib -name 'libethercat.so*' 2>/dev/null | head -1" || true)
-    if [ -n "$ec_check" ]; then
+        'dpkg -l 2>/dev/null | grep -q "^ii.*ethercat" && echo yes || { find /usr/lib /usr/local/lib -maxdepth 3 -name "libethercat.so*" \( -type f -o -type l \) 2>/dev/null | head -1 && echo yes || echo no; }' || true)
+    if [[ "$ec_check" == *"yes"* ]]; then
         HAVE_ETHERCAT=true
         echo "  ✓ EtherCAT       — IgH Master installed"
 
@@ -274,7 +274,7 @@ scan_target_backends() {
         mkdir -p "$DEPLOY_STAGING/lib"
         local ec_libs
         ec_libs=$(ssh_cmd "$user" "$host" \
-            "find /usr/lib /usr/local/lib -name 'libethercat.so*' -type f -o -type l 2>/dev/null" || true)
+            'find /usr/lib /usr/local/lib -maxdepth 3 -name "libethercat.so*" \( -type f -o -type l \) 2>/dev/null' || true)
         while IFS= read -r lib; do
             [ -z "$lib" ] && continue
             local bname
