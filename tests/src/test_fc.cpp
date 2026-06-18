@@ -130,3 +130,167 @@ TEST_CASE("SignalProcess nowNs returns increasing values", "[fc][signal]") {
     auto t2 = common::rt::signalProcessTickNow();
     CHECK(t2 > t1);
 }
+
+// ---- HardwareCatalog tests -------------------------------------------------
+
+#include "fc/ethercat/HardwareCatalog.h"
+#include <fstream>
+#include <filesystem>
+
+TEST_CASE("HardwareCatalog generate UUID format", "[fc][catalog]") {
+    // generateUuid() is private, but we can test via addEntry
+    fc::pdo::HardwareCatalog catalog;
+    fc::pdo::CatalogEntry entry{
+        "EC|00000002|00020001|REV00000001|POS0001|0600:01",
+        "", "DigitalOutput", "EL2124[1] DO 0x0600:01",
+        "EL2124", 1, 0x00020001u, 0x00000001u,
+        0x0600, 0x01, true
+    };
+    catalog.addEntry(std::move(entry));
+
+    auto* found = catalog.findByKey("EC|00000002|00020001|REV00000001|POS0001|0600:01");
+    REQUIRE(found != nullptr);
+    CHECK(found->uuid.size() == 36); // RFC-4122 UUID format: 8-4-4-4-12
+    CHECK(found->uuid.substr(8, 1) == "-");
+    CHECK(found->uuid.substr(13, 1) == "-");
+    CHECK(found->uuid.substr(18, 1) == "-");
+    CHECK(found->uuid.substr(23, 1) == "-");
+}
+
+TEST_CASE("HardwareCatalog registerEcChannel creates new entry", "[fc][catalog]") {
+    fc::pdo::HardwareCatalog catalog;
+
+    const auto& entry = catalog.registerEcChannel(
+        0x00000002u, // vendor
+        0x00020001u, // product
+        0x00000001u, // revision
+        1,           // position
+        0x0600,      // pdo index
+        0x01,        // pdo subindex
+        "DigitalOutput",
+        "EL2124",
+        true
+    );
+
+    CHECK(entry.slaveName == "EL2124");
+    CHECK(entry.slavePos == 1);
+    CHECK(entry.isOutput == true);
+    CHECK(entry.channelType == "DigitalOutput");
+    CHECK(entry.uuid.size() == 36);
+}
+
+TEST_CASE("HardwareCatalog registerEcChannel reuses existing UUID", "[fc][catalog]") {
+    fc::pdo::HardwareCatalog catalog;
+
+    const auto& entry1 = catalog.registerEcChannel(
+        0x00000002u, 0x00020001u, 0x00000001u,
+        1, 0x0600, 0x01, "DigitalOutput", "EL2124", true);
+
+    const auto& entry2 = catalog.registerEcChannel(
+        0x00000002u, 0x00020001u, 0x00000001u,
+        1, 0x0600, 0x01, "DigitalOutput", "EL2124", true);
+
+    // Same key → same UUID preserved
+    CHECK(entry1.uuid == entry2.uuid);
+    CHECK(entry1.key == entry2.key);
+}
+
+TEST_CASE("HardwareCatalog findByUuid lookup", "[fc][catalog]") {
+    fc::pdo::HardwareCatalog catalog;
+
+    const auto& entry = catalog.registerEcChannel(
+        0x00000002u, 0x00020001u, 0x00000001u,
+        1, 0x0600, 0x01, "DigitalOutput", "EL2124", true);
+
+    auto* found = catalog.findByUuid(entry.uuid);
+    REQUIRE(found != nullptr);
+    CHECK(found->uuid == entry.uuid);
+    CHECK(found->slaveName == "EL2124");
+}
+
+TEST_CASE("HardwareCatalog load and save", "[fc][catalog]") {
+    namespace fs = std::filesystem;
+    std::string path = fs::temp_directory_path() / "test_catalog.json";
+
+    fc::pdo::HardwareCatalog catalog;
+    catalog.registerEcChannel(
+        0x00000002u, 0x00020001u, 0x00000001u,
+        1, 0x0600, 0x01, "DigitalOutput", "EL2124", true);
+    catalog.registerEcChannel(
+        0x00000002u, 0x00010001u, 0x00000001u,
+        2, 0x0600, 0x01, "DigitalInput", "EL1124", false);
+
+    CHECK(catalog.save(path));
+    CHECK(fs::exists(path));
+
+    // Load into a new catalog
+    fc::pdo::HardwareCatalog catalog2;
+    CHECK(catalog2.load(path));
+    CHECK(catalog2.entries().size() == 2);
+
+    // UUIDs should be preserved
+    auto* entry = catalog2.findByKey(catalog.entries()[0].key);
+    REQUIRE(entry != nullptr);
+    CHECK(entry->uuid == catalog.entries()[0].uuid);
+
+    fs::remove(path);
+}
+
+TEST_CASE("HardwareCatalog load nonexistent file returns true", "[fc][catalog]") {
+    fc::pdo::HardwareCatalog catalog;
+    // File absent on first run — should return true (fresh start)
+    CHECK(catalog.load("/nonexistent/path/catalog.json"));
+    CHECK(catalog.empty());
+}
+
+// ---- HardwareRegistry tests ------------------------------------------------
+
+#include "fc/pdo/HardwareRegistry.h"
+
+TEST_CASE("HardwareRegistry entryCount with no backends", "[fc][registry]") {
+    fc::pdo::HardwareRegistry registry;
+    CHECK(registry.entryCount() == 0);
+    CHECK(registry.backendCount() == 0);
+    CHECK(!registry.isFrozen());
+}
+
+TEST_CASE("HardwareRegistry lookupByUuid with empty uuid", "[fc][registry]") {
+    fc::pdo::HardwareRegistry registry;
+    CHECK(registry.lookupByUuid("") == nullptr);
+}
+
+// ---- SlaveTypeInfo tests ---------------------------------------------------
+
+#include "fc/ethercat/SlaveTypeInfo.h"
+
+TEST_CASE("SlaveTypeInfo lookup known slave", "[fc][slavetype]") {
+    // Beckhoff EL2124
+    auto* info = fc::ethercat::lookupSlaveType(0x00000002u, 0x00020001u);
+    REQUIRE(info != nullptr);
+    CHECK(std::string(info->type_name) == "EL2124");
+    CHECK(info->vendor_id == 0x00000002u);
+}
+
+TEST_CASE("SlaveTypeInfo lookup unknown slave returns nullptr", "[fc][slavetype]") {
+    auto* info = fc::ethercat::lookupSlaveType(0x00009999u, 0x00990001u);
+    CHECK(info == nullptr);
+}
+
+TEST_CASE("SlaveTypeInfo DC mode lookup for EL3632", "[fc][slavetype]") {
+    auto* info = fc::ethercat::lookupSlaveType(0x00000002u, 0x00050001u);
+    REQUIRE(info != nullptr);
+
+    const auto* dc = fc::ethercat::lookupDcMode(info);
+    REQUIRE(dc != nullptr);
+    CHECK(dc->assign_activate == 0x0730u);
+    CHECK(std::string(dc->name) == "DcSync");
+}
+
+TEST_CASE("SlaveTypeInfo DC mode lookup for EL2124 (free-run)", "[fc][slavetype]") {
+    auto* info = fc::ethercat::lookupSlaveType(0x00000002u, 0x00020001u);
+    REQUIRE(info != nullptr);
+
+    // EL2124 has FreeRun (assign_activate=0) — lookupDcMode returns first non-zero
+    const auto* dc = fc::ethercat::lookupDcMode(info);
+    CHECK(dc == nullptr); // FreeRun has assign_activate=0, so no DC mode
+}
