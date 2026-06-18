@@ -5,7 +5,7 @@
 // No EtherCAT hardware required.
 // ============================================================================
 
-#include "dynamichardware/config/Config.h"
+#include "common/config/Config.h"
 #include "fc/simulated/SimulatedAdapter.h"
 #include "fc/pdo/HardwareRegistry.h"
 #include "fc/app/Application.h"
@@ -63,7 +63,8 @@ int main(int argc, char* argv[])
     // --- Build hardware registry (sim-only) --------------------------------
     fc::pdo::HardwareRegistry registry;
 
-    auto sim = std::make_unique<fc::simulated::SimulatedAdapter>(cfg);
+    auto sim = std::make_unique<fc::simulated::SimulatedAdapter>();
+    sim->setCycleTimeUs(cfg.cycleTimeUs);
     if (!sim->initialize()) {
         common::log::logError(messages::MessageId::MAIN_SIM_INIT_FAILED);
         common::log::Logger::instance().stop();

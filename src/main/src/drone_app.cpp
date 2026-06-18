@@ -12,7 +12,7 @@
 //   8. Final diagnostics + Logger stop
 // ============================================================================
 
-#include "dynamichardware/config/Config.h"
+#include "common/config/Config.h"
 #include "fc/ethercat/EthercatAdapter.h"
 #include "fc/ethercat/HardwareCatalog.h"
 #include "fc/gpio/GPIOAdapter.h"
@@ -226,7 +226,9 @@ int main(int argc, char* argv[])
     }
 
     // Simulated adapter — always present
-    auto sim = std::make_unique<fc::simulated::SimulatedAdapter>(cfg);
+    auto sim = std::make_unique<fc::simulated::SimulatedAdapter>();
+    sim->setCycleTimeUs(cfg.cycleTimeUs);
+    sim->setCatalog(&catalog);
     if (!sim->initialize()) {
         common::log::logError(messages::MessageId::MAIN_SIM_INIT_FAILED);
         common::log::Logger::instance().stop();

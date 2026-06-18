@@ -1,3 +1,6 @@
 [submodule "thirdparty/ethercat"]
 	path = thirdparty/ethercat
 	url = https://github.com/igh-ethercat/ethercat.git
+[submodule "thirdparty/libdynamichardware"]
+	path = thirdparty/libdynamichardware
+	url = https://github.com/houserwx/libdynamichardware

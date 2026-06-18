@@ -3,69 +3,20 @@ project(EtherCatDrone CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# ---- Global dependencies ---------------------------------------------------
-find_package(nlohmann_json QUIET)
-if(NOT nlohmann_json_FOUND)
-    message(STATUS "nlohmann_json package not found; using system header")
-    include_directories(/usr/local/include)
+# ---- libdynamichardware submodule ------------------------------------------
+# Handles: PDO system, backend adapters (EtherCAT, GPIO, I2C, SPI, Simulated),
+#          RT utilities (SignalProcess, VectorBuffer), nlohmann_json (vendored).
+# Optional deps detected by submodule: libethercat, libgpiod.
+add_subdirectory(thirdparty/libdynamichardware)
+
+# Propagate optional dependency flags from submodule to project targets
+# (ETHERCAT_AVAILABLE, GPIO_LIBGPIOD_AVAILABLE are needed by project code).
+# The submodule detects these internally; we mirror them for project targets.
+if(NOT DEFINED ETHERCAT_AVAILABLE)
+    set(ETHERCAT_AVAILABLE OFF)
 endif()
-
-# EtherCAT library (optional — stub mode when absent)
-# When cross-compiling, skip host libraries — the target board provides libethercat.
-# Search thirdparty first, then system-wide (matches reference codebase pattern).
-set(IGH_ETHERCAT_DIR "${CMAKE_SOURCE_DIR}/thirdparty/ethercat")
-
-# Detect cross-compilation
-if(CMAKE_CROSSCOMPILING)
-    # Cross-compile: use local headers from thirdparty/,
-    # ETERCAT_LIB must be passed as -DETHERCAT_LIB=<aarch64 lib path> from deploy.sh
-    if(EXISTS "${IGH_ETHERCAT_DIR}/include")
-        find_path(ETHERCAT_INCLUDE_DIR NAMES ecrt.h
-            PATHS "${IGH_ETHERCAT_DIR}/include"
-            NO_DEFAULT_PATH
-        )
-        if(ETHERCAT_INCLUDE_DIR AND ETHERCAT_LIB)
-            set(ETHERCAT_AVAILABLE ON)
-            message(STATUS "Cross-compiling with EtherCAT support (headers from thirdparty/, lib=${ETHERCAT_LIB})")
-        else()
-            if(NOT ETHERCAT_LIB)
-                message(WARNING "EtherCAT cross-compile: pass -DETHERCAT_LIB=<aarch64 libethercat.so> or build stub")
-            else()
-                message(WARNING "ecrt.h not found in thirdparty/ethercat/include — EtherCAT stub mode")
-            endif()
-            set(ETHERCAT_AVAILABLE OFF)
-        endif()
-    else()
-        message(STATUS "thirdparty/ethercat not found — EtherCAT stub mode for cross-compile")
-        set(ETHERCAT_AVAILABLE OFF)
-    endif()
-else()
-    find_library(ETHERCAT_LIB NAMES ethercat
-        PATHS /usr/local/lib /usr/lib
-        PATH_SUFFIXES lib
-    )
-
-    # If not found system-wide, check thirdparty build output
-    if(NOT ETHERCAT_LIB AND EXISTS "${IGH_ETHERCAT_DIR}/lib")
-        find_library(ETHERCAT_LIB NAMES ethercat PATHS "${IGH_ETHERCAT_DIR}/lib")
-    endif()
-
-    if(NOT ETHERCAT_LIB)
-        message(STATUS "libethercat not found — EtherCAT adapter will be stub-only")
-        set(ETHERCAT_AVAILABLE OFF)
-    else()
-        find_path(ETHERCAT_INCLUDE_DIR NAMES ecrt.h
-            PATHS /usr/local/include /usr/include "${IGH_ETHERCAT_DIR}/include"
-        )
-        if(NOT ETHERCAT_INCLUDE_DIR)
-            message(WARNING "ecrt.h not found — EtherCAT adapter will be stub-only")
-            set(ETHERCAT_AVAILABLE OFF)
-            set(ETHERCAT_LIB "")
-        else()
-            message(STATUS "libethercat found at ${ETHERCAT_LIB} — EtherCAT adapter enabled")
-            set(ETHERCAT_AVAILABLE ON)
-        endif()
-    endif()
+if(NOT DEFINED LIBGPIOD_FOUND)
+    set(LIBGPIOD_FOUND FALSE)
 endif()
 
 # gRPC and Protobuf (optional — stub mode when absent)

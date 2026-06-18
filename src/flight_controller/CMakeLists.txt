@@ -1,27 +1,13 @@
 # libfc — flight controller (RT core)
-# PDO system, EtherCAT, motors, safety, redundancy, RT application, gRPC services
+# Safety, redundancy, RT application, gRPC services, wrappers, mission planning.
+# PDO system + backend adapters now provided by libdynamichardware submodule.
 
 set(FC_SOURCES
-    # PDO system
-    src/pdo/PDO.cpp
-    src/pdo/HardwareRegistry.cpp
+    # MachineStatePDO (safety-specific, stays in project)
     src/pdo/MachineStatePDO.cpp
-    # EtherCAT adapter
-    src/ethercat/EthercatAdapter.cpp
-    src/ethercat/HardwareCatalog.cpp
-    src/ethercat/kSlaveTypes.cpp
-    # I2C adapter
-    src/i2c/I2CAdapter.cpp
-    # SPI adapter
-    src/spi/SPIAdapter.cpp
-    # GPIO adapter
-    src/gpio/GPIOAdapter.cpp
-    src/gpio/BoardVariant.cpp
-    # Simulated adapter
-    src/simulated/SimulatedAdapter.cpp
-    # gRPC adapter
+    # gRPC adapter (project-specific messaging, stays in project)
     src/grpc/GrpcAdapter.cpp
-    # Motor control
+    # Motor control (control logic, not hardware transport)
     src/motor/MotorController.cpp
     # Safety
     src/safety/MachineStateController.cpp
@@ -48,36 +34,7 @@ target_include_directories(fc PUBLIC include)
 
 target_compile_options(fc PRIVATE -Wall -Wextra -Wpedantic)
 
-target_link_libraries(fc PUBLIC common imu)
-
-# libgpiod — GPIO adapter (required for Pi 4/5 GPIO support)
-# Pi 4 uses libgpiod v1 API, Pi 5 uses libgpiod v2 API.
-# Both are compatible at header level for our abstraction.
-#
-# When cross-compiling, libgpiod may be fetched from the target board
-# (like libethercat).  Deploy.sh passes -DLIBGPIOD_LIB=<path> and
-# -DLIBGPIOD_INCLUDE_DIR=<path> pointing to the fetched aarch64 files.
-# We also accept -DLIBGPIOD_VERSION=v1|v2 to skip header inspection
-# when the fetched headers might be stale or missing.
-
-# For cross-compilation: accept LIBGPIOD_LIB as a cache variable from deploy.sh
-if(CMAKE_CROSSCOMPILING)
-    if(LIBGPIOD_LIB AND EXISTS "${LIBGPIOD_LIB}")
-        set(LIBGPIOD_FOUND TRUE)
-        message(STATUS "Cross-compiling with libgpiod from target: ${LIBGPIOD_LIB}")
-    else()
-        set(LIBGPIOD_FOUND FALSE)
-        message(STATUS "libgpiod not provided for cross-compile — GPIO adapter will use stub mode")
-    endif()
-else()
-    find_library(LIBGPIOD_LIB NAMES gpiod PATHS /usr/lib /usr/local/lib)
-    find_path(LIBGPIOD_INCLUDE_DIR NAMES gpiod.h PATHS /usr/include /usr/local/include)
-    if(LIBGPIOD_LIB AND LIBGPIOD_INCLUDE_DIR)
-        set(LIBGPIOD_FOUND TRUE)
-    else()
-        set(LIBGPIOD_FOUND FALSE)
-    endif()
-endif()
+target_link_libraries(fc PUBLIC common imu DynamicHardware::dynamichardware)
 
 if(LIBGPIOD_FOUND)
     # libgpiod 1.0+ (2019) uses the v2 API exclusively.
