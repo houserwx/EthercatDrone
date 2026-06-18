@@ -15,6 +15,8 @@
 #include "common/config/Config.h"
 #include "fc/ethercat/EthercatAdapter.h"
 #include "fc/ethercat/HardwareCatalog.h"
+#include "fc/gpio/GPIOAdapter.h"
+#include "fc/gpio/BoardVariant.h"
 #include "fc/i2c/I2CAdapter.h"
 #include "fc/spi/SPIAdapter.h"
 #include "fc/simulated/SimulatedAdapter.h"
@@ -190,6 +192,36 @@ int main(int argc, char* argv[])
             registry.addBackend(std::move(spi));
         } else {
             std::printf("[drone_app] ✗ SPI backend unavailable (no /dev/spidev* found)\n");
+        }
+    }
+
+    // GPIO backend — probe for gpiochip, auto-detect board variant
+    {
+        auto boardVariant = fc::gpio::detectBoardVariant();
+        std::string chipPath = fc::gpio::gpioChipPath(boardVariant);
+        bool hasGPIO = fc::gpio::gpioChipAvailable(boardVariant);
+
+        if (hasGPIO) {
+            std::printf("[drone_app] %s detected — GPIO backend on %s\n",
+                        fc::gpio::boardVariantName(boardVariant).c_str(),
+                        chipPath.c_str());
+            auto gpio = std::make_unique<fc::gpio::GPIOAdapter>(boardVariant, chipPath);
+            gpio->setCatalog(&catalog);
+            const bool gpioReady = gpio->initialize();
+            if (gpioReady && !gpio->isStubMode()) {
+                std::printf("[drone_app] ✓ GPIO backend active (%s, %zu lines)\n",
+                            fc::gpio::boardVariantName(boardVariant).c_str(),
+                            gpio->lineCount());
+            } else if (gpioReady) {
+                std::printf("[drone_app] ⚠ GPIO backend initialized in stub mode (no libgpiod)\n");
+                std::printf("[drone_app]   Install libgpiod on target: sudo apt install libgpiod-dev\n");
+            } else {
+                std::printf("[drone_app] ⚠ GPIO chip available but no lines configured\n");
+                std::printf("[drone_app]   Add GPIO lines to hardware.json to enable\n");
+            }
+            registry.addBackend(std::move(gpio));
+        } else {
+            std::printf("[drone_app] ✗ GPIO backend unavailable (no /dev/gpiochip* found)\n");
         }
     }
 
