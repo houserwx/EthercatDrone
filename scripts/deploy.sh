@@ -229,84 +229,143 @@ if $DO_CLEAN; then
     ok "Cleaned $CROSS_BUILD_DIR and $DEPLOY_DIR_NAME/"
 fi
 
-# ---- 2. Fetch aarch64 libethercat from target (if available) -------------
-# Cross-compile builds in stub mode (CMakeLists.txt skips host libethercat).
-# For real EtherCAT support on target, we need the target's aarch64 library.
-# We fetch it from the first reachable flyboard and stage it for deployment.
+# ---- 2. Scan target for available backend libraries ----------------------
+# Cross-compile builds in stub mode (CMakeLists.txt skips host libraries).
+# We scan the first reachable target to see which backends will work at runtime,
+# then fetch any needed shared libraries for deployment.
 
-fetch_ethercat_from_target() {
+# Backend capability flags
+HAVE_ETHERCAT=false
+HAVE_I2C=false
+HAVE_SPI=false
+HAVE_GPIO=false
+HAVE_CAN=false
+HAVE_UART=false
+
+scan_target_backends() {
     local label="$1" user="$2" host="$3"
-    local remote_libs=()
 
-    hdr "Fetching libethercat from $label ($user@$host)"
+    hdr "Scanning $label for backend capabilities ($user@$host)"
 
     if $DO_DRY_RUN; then
-        echo "[dry-run] Would fetch libethercat from $user@$host"
+        echo "[dry-run] Would scan $user@$host for backend capabilities"
         return 0
     fi
 
     # Test connectivity
     if ! ssh_cmd "$user" "$host" "echo ok" &>/dev/null; then
-        warn "Cannot reach $user@$host — skipping libethercat fetch"
+        warn "Cannot reach $user@$host — skipping capability scan"
         return 1
     fi
 
-    # Find libethercat on the target (check common locations)
-    local lib_paths=(
-        "/usr/lib/libethercat.so*"
-        "/usr/local/lib/libethercat.so*"
-        "/usr/lib/aarch64-linux-gnu/libethercat.so*"
-        "/usr/lib/x86_64-linux-gnu/libethercat.so*"
-    )
+    ok "Connected to $host"
+    echo ""
+    echo "Backend availability on $label:"
 
-    local found=false
-    for pattern in "${lib_paths[@]}"; do
-        local found_libs
-        found_libs=$(ssh_cmd "$user" "$host" "find $pattern -type f -o -type l 2>/dev/null | head -5" || true)
-        if [ -n "$found_libs" ]; then
-            found=true
-            while IFS= read -r lib; do
-                echo "  Found: $lib"
-                remote_libs+=("$lib")
-            done <<< "$found_libs"
-            break
+    # --- EtherCAT (IgH Master) ---
+    local ec_check
+    ec_check=$(ssh_cmd "$user" "$host" \
+        "dpkg -l | grep -q ethercat && echo yes || find /usr/lib /usr/local/lib -name 'libethercat.so*' 2>/dev/null | head -1" || true)
+    if [ -n "$ec_check" ]; then
+        HAVE_ETHERCAT=true
+        echo "  ✓ EtherCAT       — IgH Master installed"
+
+        # Fetch libethercat for deployment
+        mkdir -p "$DEPLOY_STAGING/lib"
+        local ec_libs
+        ec_libs=$(ssh_cmd "$user" "$host" \
+            "find /usr/lib /usr/local/lib -name 'libethercat.so*' -type f -o -type l 2>/dev/null" || true)
+        while IFS= read -r lib; do
+            [ -z "$lib" ] && continue
+            local bname
+            bname=$(basename "$lib")
+            echo "    Fetching: $bname"
+            scp_cmd "$user@$host:$lib" "$user" "$host" "$DEPLOY_STAGING/lib/" 2>/dev/null || true
+        done <<< "$ec_libs"
+    else
+        echo "  ✗ EtherCAT       — not installed (stub mode)"
+        echo "    Install on target: https://github.com/igh-ethercat/ethercat"
+    fi
+
+    # --- I2C (kernel char devices) ---
+    local i2c_check
+    i2c_check=$(ssh_cmd "$user" "$host" \
+        "ls /dev/i2c-* 2>/dev/null | head -1 || modprobe -n i2c-dev 2>/dev/null && echo yes" || true)
+    if [ -n "$i2c_check" ]; then
+        HAVE_I2C=true
+        echo "  ✓ I2C            — /dev/i2c-* available"
+    else
+        echo "  ✓ I2C            — kernel module available (stub backend, no extra libs)"
+    fi
+
+    # --- SPI (kernel char devices) ---
+    local spi_check
+    spi_check=$(ssh_cmd "$user" "$host" \
+        "ls /dev/spidev* 2>/dev/null | head -1 || modprobe -n spidev 2>/dev/null && echo yes" || true)
+    if [ -n "$spi_check" ]; then
+        HAVE_SPI=true
+        echo "  ✓ SPI            — /dev/spidev* available"
+    else
+        echo "  ✓ SPI            — kernel module available (stub backend, no extra libs)"
+    fi
+
+    # --- GPIO (libgpiod or sysfs) ---
+    local gpio_check
+    gpio_check=$(ssh_cmd "$user" "$host" \
+        "dpkg -l | grep -q libgpiod && echo gpiod || ls /dev/gpiochip* 2>/dev/null | head -1 || echo sysfs" || true)
+    if [ -n "$gpio_check" ]; then
+        HAVE_GPIO=true
+        local gpio_type
+        gpio_type=$(echo "$gpio_check" | head -1)
+        if [[ "$gpio_type" == *"gpiod"* ]]; then
+            echo "  ✓ GPIO           — libgpiod available"
+        else
+            echo "  ✓ GPIO           — /dev/gpiochip* available (sysfs)"
         fi
-    done
-
-    if [ "$found" = false ]; then
-        warn "libethercat not found on $label — binaries will use stub mode"
-        return 1
+    else
+        echo "  ✗ GPIO           — no gpiochip devices found"
     fi
 
-    # Create staging directory for libraries
-    mkdir -p "$DEPLOY_STAGING/lib"
+    # --- CAN (SocketCAN) ---
+    local can_check
+    can_check=$(ssh_cmd "$user" "$host" \
+        "ip link show type can 2>/dev/null | head -1 || modprobe -n can 2>/dev/null && echo yes" || true)
+    if [ -n "$can_check" ]; then
+        HAVE_CAN=true
+        echo "  ✓ CAN            — SocketCAN available"
+    else
+        echo "  ✗ CAN            — not available (install socketcan)"
+        echo "    Install on target: sudo apt install socketcan can-utils"
+    fi
 
-    # Fetch each library
-    for lib in "${remote_libs[@]}"; do
-        local basename
-        basename=$(basename "$lib")
-        echo "  Fetching: $basename"
-        scp_cmd "$user@$host:$lib" "$user" "$host" "$DEPLOY_STAGING/lib/" 2>/dev/null || true
-    done
+    # --- UART (serial ports) ---
+    local uart_check
+    uart_check=$(ssh_cmd "$user" "$host" \
+        "ls /dev/ttyS* /dev/ttyAMA* /dev/ttyUSB* /dev/ttyACM* 2>/dev/null | head -2" || true)
+    if [ -n "$uart_check" ]; then
+        HAVE_UART=true
+        echo "  ✓ UART           — serial ports available"
+    else
+        echo "  ✗ UART           — no serial ports found"
+    fi
 
-    ok "Fetched libethercat from $label"
+    echo ""
     return 0
 }
 
-# Try to fetch from flyboards (they're more likely to have ethercat installed)
-ETHERCAT_FETCHED=false
-if $DEPLOY_FLYBOARD_A && [ "$ETHERCAT_FETCHED" = false ]; then
-    fetch_ethercat_from_target "Flyboard A" "$FLYBOARD_A_USER" "$FLYBOARD_A_HOST" && ETHERCAT_FETCHED=true
+# Scan the first reachable flyboard for capabilities
+SCAN_DONE=false
+if $DEPLOY_FLYBOARD_A && [ "$SCAN_DONE" = false ]; then
+    scan_target_backends "Flyboard A" "$FLYBOARD_A_USER" "$FLYBOARD_A_HOST" && SCAN_DONE=true
 fi
-if [ "$ETHERCAT_FETCHED" = false ]; then
+if [ "$SCAN_DONE" = false ]; then
     if $DEPLOY_FLYBOARD_B; then
-        fetch_ethercat_from_target "Flyboard B" "$FLYBOARD_B_USER" "$FLYBOARD_B_HOST" && ETHERCAT_FETCHED=true
+        scan_target_backends "Flyboard B" "$FLYBOARD_B_USER" "$FLYBOARD_B_HOST" && SCAN_DONE=true
     fi
 fi
-if [ "$ETHERCAT_FETCHED" = false ]; then
-    warn "libethercat not fetched from any target"
-    warn "Binaries will use stub mode (EtherCAT adapter will be disabled at runtime)"
-    warn "Install ethercat on target board first, then re-run deploy"
+if [ "$SCAN_DONE" = false ]; then
+    warn "Could not reach any target — assuming stub mode for all backends"
+    warn "Backends will use simulated/stub implementations at runtime"
 fi
 
 # ---- 3. Cross-compile with CMake -----------------------------------------
