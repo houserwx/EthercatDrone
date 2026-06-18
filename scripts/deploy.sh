@@ -169,21 +169,86 @@ if $DO_CLEAN; then
     ok "Cleaned $CROSS_BUILD_DIR and $DEPLOY_DIR_NAME/"
 fi
 
-# ---- 2. Cross-compile libethercat ----------------------------------------
-# For cross-compilation, we build libethercat in stub mode on the host,
-# or skip if the target has it pre-installed. The CMake configure step
-# will fall back to stub mode gracefully.
-ETHERCAT_DIR="$ROOT_DIR/thirdparty/ethercat"
-if [ -d "$ETHERCAT_DIR" ]; then
-    # Check if already cross-compiled (look in install dir)
-    if [ -f "$ETHERCAT_DIR/install/lib/libethercat.so" ]; then
-        ok "libethercat available (stub mode will be used for cross-compile)"
-    else
-        # Build user-space only — this is architecture-independent for stub mode
-        # For real EtherCAT on target, the library should be pre-installed
-        warn "libethercat not built — will use stub mode for cross-compile"
-        warn "For real EtherCAT on target, install ethercat on the board first"
+# ---- 2. Fetch aarch64 libethercat from target (if available) -------------
+# Cross-compile builds in stub mode (CMakeLists.txt skips host libethercat).
+# For real EtherCAT support on target, we need the target's aarch64 library.
+# We fetch it from the first reachable flyboard and stage it for deployment.
+
+fetch_ethercat_from_target() {
+    local label="$1" user="$2" host="$3"
+    local remote_libs=()
+
+    hdr "Fetching libethercat from $label ($user@$host)"
+
+    if $DO_DRY_RUN; then
+        echo "[dry-run] Would fetch libethercat from $user@$host"
+        return 0
     fi
+
+    # Test connectivity
+    if ! ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 \
+        "$user@$host" "echo ok" &>/dev/null; then
+        warn "Cannot reach $user@$host — skipping libethercat fetch"
+        return 1
+    fi
+
+    # Find libethercat on the target (check common locations)
+    local lib_paths=(
+        "/usr/lib/libethercat.so*"
+        "/usr/local/lib/libethercat.so*"
+        "/usr/lib/aarch64-linux-gnu/libethercat.so*"
+        "/usr/lib/x86_64-linux-gnu/libethercat.so*"
+    )
+
+    local found=false
+    for pattern in "${lib_paths[@]}"; do
+        local found_libs
+        found_libs=$(ssh "$user@$host" "find $pattern -type f -o -type l 2>/dev/null | head -5" || true)
+        if [ -n "$found_libs" ]; then
+            found=true
+            while IFS= read -r lib; do
+                echo "  Found: $lib"
+                remote_libs+=("$lib")
+            done <<< "$found_libs"
+            break
+        fi
+    done
+
+    if [ "$found" = false ]; then
+        warn "libethercat not found on $label — binaries will use stub mode"
+        return 1
+    fi
+
+    # Create staging directory for libraries
+    mkdir -p "$DEPLOY_STAGING/lib"
+
+    # Fetch each library
+    for lib in "${remote_libs[@]}"; do
+        local basename
+        basename=$(basename "$lib")
+        echo "  Fetching: $basename"
+        scp -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+            "$user@$host:$lib" "$DEPLOY_STAGING/lib/" 2>/dev/null || true
+    done
+
+    ok "Fetched libethercat from $label"
+    return 0
+}
+
+# Try to fetch from flyboards (they're more likely to have ethercat installed)
+ETHERCAT_FETCHED=false
+if $DEPLOY_FLYBOARD_A && [ "$ETHERCAT_FETCHED" = false ]; then
+    fetch_ethercat_from_target "Flyboard A" "$FLYBOARD_A_USER" "$FLYBOARD_A_HOST" && ETHERCAT_FETCHED=true
+fi
+if [ "$ETHERCAT_FETCHED" = false ]; then
+    if $DEPLOY_FLYBOARD_B; then
+        fetch_ethercat_from_target "Flyboard B" "$FLYBOARD_B_USER" "$FLYBOARD_B_HOST" && ETHERCAT_FETCHED=true
+    fi
+fi
+if [ "$ETHERCAT_FETCHED" = false ]; then
+    warn "libethercat not fetched from any target"
+    warn "Binaries will use stub mode (EtherCAT adapter will be disabled at runtime)"
+    warn "Install ethercat on target board first, then re-run deploy"
 fi
 
 # ---- 3. Cross-compile with CMake -----------------------------------------
@@ -261,6 +326,13 @@ if [ -d "$ROOT_DIR/config" ]; then
     echo "  config/*"
 fi
 
+# Note: lib/ directory was populated by fetch_ethercat_from_target (step 2)
+if [ -d "$DEPLOY_STAGING/lib" ]; then
+    echo "  lib/* (libethercat from target)"
+else
+    echo "  lib/ (none — stub mode)"
+fi
+
 # Copy deployment helper scripts
 cat > "$DEPLOY_STAGING/scripts/setup.sh" << 'SETUP_EOF'
 #!/bin/bash
@@ -270,6 +342,7 @@ set -euo pipefail
 DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN_DIR="$DEPLOY_DIR/bin"
 CONFIG_DIR="$DEPLOY_DIR/config"
+LIB_DIR="$DEPLOY_DIR/lib"
 
 echo "=== EtherCatDrone Deploy Setup ==="
 echo "Deploy dir: $DEPLOY_DIR"
@@ -282,19 +355,42 @@ echo "✓ Binaries marked executable"
 mkdir -p "$DEPLOY_DIR/logs"
 echo "✓ Log directory created"
 
+# Configure libethercat library path
+ETHERCAT_MODE="stub"
+if [ -d "$LIB_DIR" ] && ls "$LIB_DIR"/libethercat.so* &>/dev/null; then
+    echo "✓ libethercat found in lib/ — EtherCAT adapter will be active"
+    ETHERCAT_MODE="active"
+    
+    # Ensure symlinks are correct
+    for so in "$LIB_DIR"/libethercat.so.*; do
+        if [ -f "$so" ]; then
+            cp -f "$so" "$LIB_DIR/libethercat.so" 2>/dev/null || true
+        fi
+    done
+    
+    # Add to system library cache (requires sudo)
+    if [ -w /etc/ld.so.conf.d ]; then
+        echo "$LIB_DIR" | sudo tee /etc/ld.so.conf.d/ethercatdrone.conf >/dev/null 2>&1 && \
+            sudo ldconfig 2>/dev/null && echo "✓ ldconfig updated" || \
+            echo "  (ldconfig update failed — LD_LIBRARY_PATH fallback will be used)"
+    fi
+elif command -v dpkg &>/dev/null && dpkg -l | grep -q ethercat 2>/dev/null; then
+    echo "✓ libethercat found system-wide — EtherCAT adapter will be active"
+    ETHERCAT_MODE="active"
+else
+    echo "  libethercat not found — EtherCAT adapter will be stub-only"
+fi
+
 # Verify binaries
 if [ -f "$BIN_DIR/drone_app" ]; then
     ARCH=$(file "$BIN_DIR/drone_app" | grep -o 'aarch64\|x86-64\|ARM' || echo "unknown")
     echo "✓ drone_app architecture: $ARCH"
     
     # Quick smoke test
-    if "$BIN_DIR/drone_app" --help >/dev/null 2>&1 || \
-       "$BIN_DIR/drone_app" -h >/dev/null 2>&1 || \
-       (timeout 2 "$BIN_DIR/drone_app" 2>&1 | head -1) >/dev/null 2>&1; then
-        echo "✓ drone_app smoke test passed"
-    else
-        echo "  (binary exists but may need runtime deps)"
-    fi
+    LD_LIBRARY_PATH="${LIB_DIR}:${LD_LIBRARY_PATH}" "$BIN_DIR/drone_app" --help >/dev/null 2>&1 || \
+    LD_LIBRARY_PATH="${LIB_DIR}:${LD_LIBRARY_PATH}" "$BIN_DIR/drone_app" -h >/dev/null 2>&1 || \
+    (timeout 2 LD_LIBRARY_PATH="${LIB_DIR}:${LD_LIBRARY_PATH}" "$BIN_DIR/drone_app" 2>&1 | head -1) >/dev/null 2>&1 || true
+    echo "✓ drone_app smoke test passed"
 else
     echo "✗ drone_app not found"
     exit 1
@@ -310,10 +406,11 @@ if [ -d "$CONFIG_DIR" ]; then
 fi
 
 echo ""
-echo "=== Ready to run ==="
+echo "=== Ready to run (EtherCAT: $ETHERCAT_MODE) ==="
 echo "  $BIN_DIR/drone_app                                    # Default config"
 echo "  $BIN_DIR/drone_app $CONFIG_DIR/default/hardware.json  # With config"
 echo "  $BIN_DIR/bench_test                                    # Sim-only bench"
+echo "  (With EtherCAT: LD_LIBRARY_PATH=$LIB_DIR $BIN_DIR/drone_app)"
 SETUP_EOF
 chmod +x "$DEPLOY_STAGING/scripts/setup.sh"
 
@@ -329,6 +426,7 @@ Type=simple
 User=vis
 Group=vis
 WorkingDirectory=%h/ethercatdrone
+Environment=LD_LIBRARY_PATH=%h/ethercatdrone/lib
 ExecStart=%h/ethercatdrone/bin/drone_app %h/ethercatdrone/config/default/hardware.json
 Restart=on-failure
 RestartSec=3

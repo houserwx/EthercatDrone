@@ -11,32 +11,40 @@ if(NOT nlohmann_json_FOUND)
 endif()
 
 # EtherCAT library (optional — stub mode when absent)
-# Search thirdparty first, then system-wide (matches reference codebase pattern)
+# When cross-compiling, skip host libraries — the target board provides libethercat.
+# Search thirdparty first, then system-wide (matches reference codebase pattern).
 set(IGH_ETHERCAT_DIR "${CMAKE_SOURCE_DIR}/thirdparty/ethercat")
-find_library(ETHERCAT_LIB NAMES ethercat
-    PATHS /usr/local/lib /usr/lib
-    PATH_SUFFIXES lib
-)
 
-# If not found system-wide, check thirdparty build output
-if(NOT ETHERCAT_LIB AND EXISTS "${IGH_ETHERCAT_DIR}/lib")
-    find_library(ETHERCAT_LIB NAMES ethercat PATHS "${IGH_ETHERCAT_DIR}/lib")
-endif()
-
-if(NOT ETHERCAT_LIB)
-    message(STATUS "libethercat not found — EtherCAT adapter will be stub-only")
+# Detect cross-compilation
+if(CMAKE_CROSSCOMPILING)
+    message(STATUS "Cross-compiling — libethercat search skipped (target provides it)")
     set(ETHERCAT_AVAILABLE OFF)
 else()
-    find_path(ETHERCAT_INCLUDE_DIR NAMES ecrt.h
-        PATHS /usr/local/include /usr/include "${IGH_ETHERCAT_DIR}/include"
+    find_library(ETHERCAT_LIB NAMES ethercat
+        PATHS /usr/local/lib /usr/lib
+        PATH_SUFFIXES lib
     )
-    if(NOT ETHERCAT_INCLUDE_DIR)
-        message(WARNING "ecrt.h not found — EtherCAT adapter will be stub-only")
+
+    # If not found system-wide, check thirdparty build output
+    if(NOT ETHERCAT_LIB AND EXISTS "${IGH_ETHERCAT_DIR}/lib")
+        find_library(ETHERCAT_LIB NAMES ethercat PATHS "${IGH_ETHERCAT_DIR}/lib")
+    endif()
+
+    if(NOT ETHERCAT_LIB)
+        message(STATUS "libethercat not found — EtherCAT adapter will be stub-only")
         set(ETHERCAT_AVAILABLE OFF)
-        set(ETHERCAT_LIB "")
     else()
-        message(STATUS "libethercat found at ${ETHERCAT_LIB} — EtherCAT adapter enabled")
-        set(ETHERCAT_AVAILABLE ON)
+        find_path(ETHERCAT_INCLUDE_DIR NAMES ecrt.h
+            PATHS /usr/local/include /usr/include "${IGH_ETHERCAT_DIR}/include"
+        )
+        if(NOT ETHERCAT_INCLUDE_DIR)
+            message(WARNING "ecrt.h not found — EtherCAT adapter will be stub-only")
+            set(ETHERCAT_AVAILABLE OFF)
+            set(ETHERCAT_LIB "")
+        else()
+            message(STATUS "libethercat found at ${ETHERCAT_LIB} — EtherCAT adapter enabled")
+            set(ETHERCAT_AVAILABLE ON)
+        endif()
     endif()
 endif()
 
