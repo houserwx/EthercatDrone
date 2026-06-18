@@ -14,6 +14,9 @@ set(FC_SOURCES
     src/i2c/I2CAdapter.cpp
     # SPI adapter
     src/spi/SPIAdapter.cpp
+    # GPIO adapter
+    src/gpio/GPIOAdapter.cpp
+    src/gpio/BoardVariant.cpp
     # Simulated adapter
     src/simulated/SimulatedAdapter.cpp
     # gRPC adapter
@@ -46,6 +49,29 @@ target_include_directories(fc PUBLIC include)
 target_compile_options(fc PRIVATE -Wall -Wextra -Wpedantic)
 
 target_link_libraries(fc PUBLIC common imu)
+
+# libgpiod — GPIO adapter (optional, stub mode when absent)
+# Pi 4 uses libgpiod v1 API, Pi 5 uses libgpiod v2 API.
+# Both are compatible at header level for our abstraction.
+find_library(LIBGPIOD_LIB NAMES gpiod PATHS /usr/lib /usr/local/lib)
+find_path(LIBGPIOD_INCLUDE_DIR NAMES gpiod.h PATHS /usr/include /usr/local/include)
+
+if(LIBGPIOD_LIB AND LIBGPIOD_INCLUDE_DIR)
+    # Detect libgpiod version (v2 API has gpiod2.h or defines GPIOD_API_VERSION)
+    file(STRINGS "${LIBGPIOD_INCLUDE_DIR}/gpiod.h" _gpiod_version_line
+         REGEX "GPIOD_API_VERSION|GPIOD_VERSION")
+    if(_gpiod_version_line MATCHES "GPIOD_API_VERSION.*2")
+        target_compile_definitions(fc PRIVATE GPIO_LIBGPIOD_AVAILABLE LIBGPIOD_V2)
+        message(STATUS "libgpiod v2 found — GPIO adapter enabled with v2 API")
+    else()
+        target_compile_definitions(fc PRIVATE GPIO_LIBGPIOD_AVAILABLE)
+        message(STATUS "libgpiod found — GPIO adapter enabled (v1 API)")
+    endif()
+    target_link_libraries(fc PRIVATE ${LIBGPIOD_LIB})
+    target_include_directories(fc PRIVATE ${LIBGPIOD_INCLUDE_DIR})
+else()
+    message(STATUS "libgpiod not found — GPIO adapter will use stub mode")
+endif()
 
 if(ETHERCAT_AVAILABLE AND ETHERCAT_LIB)
     target_link_libraries(fc PRIVATE ${ETHERCAT_LIB})
