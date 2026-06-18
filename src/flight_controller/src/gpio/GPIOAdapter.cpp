@@ -115,7 +115,7 @@ bool GPIOAdapter::initialize()
 }
 
 // ---------------------------------------------------------------------------
-// discoverLines() — scan GPIO chip and populate catalog with all available lines
+// discoverLines() — scan GPIO chip, skip kernel-claimed lines, populate catalog
 // ---------------------------------------------------------------------------
 void GPIOAdapter::discoverLines()
 {
@@ -128,14 +128,35 @@ void GPIOAdapter::discoverLines()
     }
 #endif
 
-    std::printf("[GPIOAdapter] Discovered %u GPIO lines on %s\n",
+    std::printf("[GPIOAdapter] Scanning %u GPIO lines on %s\n",
                 total_lines, chipPath_.c_str());
 
-    // Reserve handles upfront
+    // Reserve handles upfront (worst case: all lines are free)
     handles_.resize(total_lines);
 
-    // Discover each line — default all as input (safe default)
+    uint32_t claimed = 0;
+    uint32_t registered = 0;
+
+    // Discover each line — skip kernel-claimed lines (I2C, SPI, etc.)
     for (uint32_t i = 0; i < total_lines; ++i) {
+#if HAS_LIBGPIOD
+        if (!stubMode_ && chipHandle_) {
+            // Check if this line is already claimed by a kernel consumer
+            auto* chip = static_cast<struct gpiod_chip*>(chipHandle_);
+            struct gpiod_line* probe = gpiod_chip_get_line(chip, i);
+            if (probe) {
+                const char* consumer = gpiod_line_consumer(probe);
+                if (consumer && consumer[0] != '\0') {
+                    // Line is in use by kernel driver — skip it
+                    claimed++;
+                    std::printf("[GPIOAdapter]   Skipping GPIO%u (claimed by %s)\n",
+                                i, consumer);
+                    continue;
+                }
+            }
+        }
+#endif
+
         GPIOLine line;
         line.offset = i;
         line.direction = LineDirection::INPUT;
@@ -152,6 +173,7 @@ void GPIOAdapter::discoverLines()
         line.entry = &entry;
 
         lines_.push_back(std::move(line));
+        registered++;
 
         // Register in hardware catalog
         if (catalog_) {
@@ -168,7 +190,8 @@ void GPIOAdapter::discoverLines()
         }
     }
 
-    std::printf("[GPIOAdapter] Registered %zu GPIO lines in catalog\n", lines_.size());
+    std::printf("[GPIOAdapter] Registered %zu available lines (%u skipped by kernel drivers)\n",
+                registered, claimed);
 }
 
 // ---------------------------------------------------------------------------
