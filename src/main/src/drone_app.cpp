@@ -15,6 +15,8 @@
 #include "common/config/Config.h"
 #include "fc/ethercat/EthercatAdapter.h"
 #include "fc/ethercat/HardwareCatalog.h"
+#include "fc/i2c/I2CAdapter.h"
+#include "fc/spi/SPIAdapter.h"
 #include "fc/simulated/SimulatedAdapter.h"
 #include "fc/pdo/HardwareRegistry.h"
 #include "fc/app/Application.h"
@@ -33,6 +35,8 @@
 #include <memory>
 #include <string>
 #include <sys/mman.h>
+#include <sys/stat.h>
+#include <dirent.h>
 
 // ---------------------------------------------------------------------------
 // Signal handling
@@ -113,10 +117,81 @@ int main(int argc, char* argv[])
                 static_cast<int64_t>(ec->slaveCount()),
                 static_cast<int64_t>(ec->workingCounter()),
                 static_cast<int64_t>(ec->isFullyCommunicating() ? 1 : 0));
+        std::printf("[drone_app] ✓ EtherCAT backend active (%d slaves)\n", ec->slaveCount());
     } else {
         common::log::logInfo(messages::MessageId::MAIN_ETHERCAT_UNAVAILABLE);
+        std::printf("[drone_app] ✗ EtherCAT backend unavailable (stub)\n");
     }
     registry.addBackend(std::move(ec));
+
+    // I2C backend — probe for available buses
+    {
+        bool hasI2CBus = false;
+        std::string i2cBusPath;
+        DIR* dev = opendir("/dev");
+        if (dev) {
+            struct dirent* entry;
+            while ((entry = readdir(dev)) != nullptr) {
+                if (entry->d_name[0] == 'i' && entry->d_name[1] == '2' &&
+                    entry->d_name[2] == 'c' && entry->d_name[3] == '-') {
+                    hasI2CBus = true;
+                    i2cBusPath = "/dev/" + std::string(entry->d_name);
+                    break;  // Use first available bus
+                }
+            }
+            closedir(dev);
+        }
+        if (hasI2CBus) {
+            auto i2c = std::make_unique<fc::i2c::I2CAdapter>(i2cBusPath);
+            i2c->setCatalog(&catalog);
+            const bool hasI2C = i2c->initialize();
+            if (hasI2C) {
+                std::printf("[drone_app] ✓ I2C backend active on %s\n", i2cBusPath.c_str());
+            } else {
+                std::printf("[drone_app] ⚠ I2C bus available at %s — no devices configured\n",
+                            i2cBusPath.c_str());
+                std::printf("[drone_app]   Add I2C devices to hardware.json to enable\n");
+            }
+            registry.addBackend(std::move(i2c));
+        } else {
+            std::printf("[drone_app] ✗ I2C backend unavailable (no /dev/i2c-* found)\n");
+        }
+    }
+
+    // SPI backend — probe for available buses
+    {
+        bool hasSPIBus = false;
+        std::string spiBusPath;
+        DIR* dev = opendir("/dev");
+        if (dev) {
+            struct dirent* entry;
+            while ((entry = readdir(dev)) != nullptr) {
+                if (entry->d_name[0] == 's' && entry->d_name[1] == 'p' &&
+                    entry->d_name[2] == 'i' && entry->d_name[3] == 'd' &&
+                    entry->d_name[4] == 'e' && entry->d_name[5] == 'v') {
+                    hasSPIBus = true;
+                    spiBusPath = "/dev/" + std::string(entry->d_name);
+                    break;  // Use first available bus
+                }
+            }
+            closedir(dev);
+        }
+        if (hasSPIBus) {
+            auto spi = std::make_unique<fc::spi::SPIAdapter>(spiBusPath);
+            spi->setCatalog(&catalog);
+            const bool hasSPI = spi->initialize();
+            if (hasSPI) {
+                std::printf("[drone_app] ✓ SPI backend active on %s\n", spiBusPath.c_str());
+            } else {
+                std::printf("[drone_app] ⚠ SPI bus available at %s — no devices configured\n",
+                            spiBusPath.c_str());
+                std::printf("[drone_app]   Add SPI devices to hardware.json to enable\n");
+            }
+            registry.addBackend(std::move(spi));
+        } else {
+            std::printf("[drone_app] ✗ SPI backend unavailable (no /dev/spidev* found)\n");
+        }
+    }
 
     // Simulated adapter — always present
     auto sim = std::make_unique<fc::simulated::SimulatedAdapter>(cfg);
@@ -129,6 +204,23 @@ int main(int argc, char* argv[])
 
     // --- Freeze for RT -----------------------------------------------------
     registry.freezeForRt();
+
+    // --- Startup diagnostics ------------------------------------------------
+    const bool hasRealHardware = hasEthercat;
+    const uint64_t totalChannels = registry.entryCount();
+    std::printf("[drone_app] Backends: %zu | Channels: %lu | Cycle: %d us\n",
+                registry.backendCount(), (unsigned long)totalChannels, cfg.cycleTimeUs);
+    if (!hasRealHardware) {
+        std::printf("[drone_app] ⚠ Running in simulation-only mode — no real hardware backends active\n");
+        std::printf("[drone_app]   To add EtherCAT hardware:\n");
+        std::printf("[drone_app]     1. Load kernel module: sudo modprobe ethercat\n");
+        std::printf("[drone_app]     2. Connect EtherCAT slaves to the bus\n");
+        std::printf("[drone_app]     3. Define channels in config/default/hardware.json\n");
+        std::printf("[drone_app]   To run with RT scheduling: sudo %s\n",
+                    argc > 0 ? argv[0] : "./bin/drone_app");
+    }
+    std::printf("[drone_app] RT loop starting... (Ctrl+C to stop)\n");
+    fflush(stdout);
 
     // --- Application -------------------------------------------------------
     fc::app::Application app(registry, cycleNs);

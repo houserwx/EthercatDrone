@@ -1,0 +1,30 @@
+{
+  "cycleTimeUs": 500,
+  "hardwareCatalogPath": "config/shared/hardware_catalog.json",
+  "hardwareConfiguration": {
+    "encoders": [],
+    "digitalInputs": [
+      {
+        "debounceMs": 0,
+        "hardwareUuid": "virt-di-0001-0000-000000000040",
+        "name": "Sim DI A (no debounce)",
+        "sim": {
+          "rpm": 115.0,
+          "rollerDiamMm": 50.0,
+          "partsPerMin": 100.0,
+          "partWidthMm": 50.0,
+          "variancePercent": 5.0
+        }
+      }
+    ],
+    "digitalOutputs": [
+      {
+        "hardwareUuid": "virt-do-0001-0000-000000000050",
+        "name": "Sim DO A (1s pulse)",
+        "pulseMs": 1000
+      }
+    ],
+    "analogInputs": [],
+    "analogOutputs": []
+  }
+}

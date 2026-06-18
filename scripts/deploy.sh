@@ -430,13 +430,39 @@ fi
 
 JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-cmake -S . -B "$CROSS_BUILD_DIR" \
-    -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-    -DCMAKE_TOOLCHAIN_FILE="$ROOT_DIR/cmake/aarch64-linux-gnu.cmake" \
-    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-    -G Ninja \
-    -DCMAKE_MAKE_PROGRAM="$(command -v ninja)" \
-    2>&1
+# Build CMake cache flags
+CMAKE_FLAGS=(
+    -S . -B "$CROSS_BUILD_DIR"
+    -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
+    -DCMAKE_TOOLCHAIN_FILE="$ROOT_DIR/cmake/aarch64-linux-gnu.cmake"
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+    -G Ninja
+    -DCMAKE_MAKE_PROGRAM="$(command -v ninja)"
+)
+
+# If we fetched aarch64 libethercat from target, pass it to CMake for linking
+if [ "$HAVE_ETHERCAT" = true ] && [ -d "$DEPLOY_STAGING/lib" ]; then
+    ETHERCAT_AARCH_LIB=$(find "$DEPLOY_STAGING/lib" -maxdepth 1 -name "libethercat.so*" -type f ! -name '*.so' 2>/dev/null | head -1)
+    if [ -z "$ETHERCAT_AARCH_LIB" ]; then
+        # Accept symlink too
+        ETHERCAT_AARCH_LIB=$(find "$DEPLOY_STAGING/lib" -maxdepth 1 -name "libethercat.so*" -type l 2>/dev/null | head -1)
+    fi
+    if [ -n "$ETHERCAT_AARCH_LIB" ]; then
+        ARCH_CHECK=$(file "$ETHERCAT_AARCH_LIB" | grep -o 'aarch64\|ARM' || true)
+        if [ -n "$ARCH_CHECK" ]; then
+            ok "Using aarch64 libethercat for cross-link: $(basename "$ETHERCAT_AARCH_LIB")"
+            CMAKE_FLAGS+=("-DETHERCAT_LIB=$ETHERCAT_AARCH_LIB")
+        else
+            warn "Fetched libethercat is not aarch64 — building stub mode"
+        fi
+    else
+        warn "No libethercat found in $DEPLOY_STAGING/lib — building stub mode"
+    fi
+else
+    warn "EtherCAT not available on target — building stub mode"
+fi
+
+cmake "${CMAKE_FLAGS[@]}" 2>&1
 
 ok "CMake cross-configure complete"
 
@@ -509,13 +535,13 @@ else
     echo "  lib/ (none — stub mode)"
 fi
 
-# Copy deployment helper scripts
-cat > "$DEPLOY_STAGING/scripts/setup.sh" << 'SETUP_EOF'
+# Copy deployment helper scripts — setup.sh goes at root of deploy dir
+cat > "$DEPLOY_STAGING/setup.sh" << 'SETUP_EOF'
 #!/bin/bash
 # Post-deploy setup script — run on target board
 set -euo pipefail
 
-DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="$DEPLOY_DIR/bin"
 CONFIG_DIR="$DEPLOY_DIR/config"
 LIB_DIR="$DEPLOY_DIR/lib"
@@ -548,7 +574,6 @@ elif ldconfig -p 2>/dev/null | grep -q libethercat; then
 elif find /usr/lib /usr/local/lib -maxdepth 4 -name "libethercat.so" 2>/dev/null | grep -q .; then
     echo "✓ libethercat found on disk — EtherCAT adapter will be active"
     ETHERCAT_MODE="active"
-    sudo ldconfig 2>/dev/null || true
 else
     echo "✗ libethercat not found — EtherCAT adapter will be stub-only"
 fi
@@ -557,16 +582,44 @@ fi
 if [ -f "$BIN_DIR/drone_app" ]; then
     ARCH=$(file "$BIN_DIR/drone_app" | grep -oE 'aarch64|x86-64|ARM' | head -1 || echo "unknown")
     echo "✓ drone_app architecture: $ARCH"
-
-    # Quick smoke test (use ${VAR:-} to handle unset LD_LIBRARY_PATH with set -u)
-    LD_LIBRARY_PATH="${LIB_DIR}:${LD_LIBRARY_PATH:-}" "$BIN_DIR/drone_app" --help >/dev/null 2>&1 || \
-    LD_LIBRARY_PATH="${LIB_DIR}:${LD_LIBRARY_PATH:-}" "$BIN_DIR/drone_app" -h >/dev/null 2>&1 || \
-    (timeout 2 env LD_LIBRARY_PATH="${LIB_DIR}:${LD_LIBRARY_PATH:-}" "$BIN_DIR/drone_app" 2>&1 | head -1) >/dev/null 2>&1 || true
-    echo "✓ drone_app smoke test passed"
+    if [ ! -x "$BIN_DIR/drone_app" ]; then
+        echo "✗ drone_app is not executable"
+        exit 1
+    fi
+    echo "✓ drone_app is executable"
 else
-    echo "✗ drone_app not found"
+    echo "✗ drone_app not found in $BIN_DIR"
+    echo "  Contents of bin/:"
+    ls -la "$BIN_DIR/" 2>/dev/null || echo "  (bin/ directory not found or empty)"
+    echo "  Deploy dir contents:"
+    ls -la "$DEPLOY_DIR/" 2>/dev/null || echo "  (deploy dir not found)"
     exit 1
 fi
+
+# Create launcher wrapper that sets CWD and LD_LIBRARY_PATH
+cat > "$BIN_DIR/run.sh" << 'RUNNER_EOF'
+#!/bin/bash
+# Launcher: sets CWD to deploy root and LD_LIBRARY_PATH before running
+declare -a ALL_ARGS=("$@")
+
+# Figure out deploy root (two levels up: bin/run.sh → ../.. → deploy root)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+LIB_DIR="$DEPLOY_DIR/lib"
+
+# Set LD_LIBRARY_PATH if lib/ exists and has .so files
+if [ -d "$LIB_DIR" ] && ls "$LIB_DIR"/*.so* &>/dev/null; then
+    export LD_LIBRARY_PATH="$LIB_DIR:${LD_LIBRARY_PATH:-}"
+fi
+
+# Change to deploy root so relative config paths work
+cd "$DEPLOY_DIR" || exit 1
+
+# Execute the binary with all passed arguments
+exec "$SCRIPT_DIR/$1" "${ALL_ARGS[@]:1}"
+RUNNER_EOF
+chmod +x "$BIN_DIR/run.sh"
+echo "✓ Launcher wrapper created at bin/run.sh"
 
 # Show config files
 if [ -d "$CONFIG_DIR" ]; then
@@ -579,15 +632,14 @@ fi
 
 echo ""
 echo "=== Ready to run (EtherCAT: $ETHERCAT_MODE) ==="
-echo "  $BIN_DIR/drone_app                                    # Default config"
-echo "  $BIN_DIR/drone_app $CONFIG_DIR/default/hardware.json  # With config"
-echo "  $BIN_DIR/bench_test                                    # Sim-only bench"
-echo "  (With EtherCAT: LD_LIBRARY_PATH=$LIB_DIR $BIN_DIR/drone_app)"
+echo "  $BIN_DIR/run.sh drone_app                                 # Default config"
+echo "  $BIN_DIR/run.sh drone_app config/default/hardware.json   # With config"
+echo "  $BIN_DIR/run.sh bench_test                                # Sim-only bench"
 SETUP_EOF
-chmod +x "$DEPLOY_STAGING/scripts/setup.sh"
+chmod +x "$DEPLOY_STAGING/setup.sh"
 
 # Create a systemd service template
-cat > "$DEPLOY_STAGING/scripts/ethercatdrone.service" << 'SERVICE_EOF'
+cat > "$DEPLOY_STAGING/ethercatdrone.service" << 'SERVICE_EOF'
 [Unit]
 Description=EtherCatDrone Real-Time Flight Controller
 After=network.target
@@ -598,8 +650,7 @@ Type=simple
 User=vis
 Group=vis
 WorkingDirectory=%h/ethercatdrone
-Environment=LD_LIBRARY_PATH=%h/ethercatdrone/lib
-ExecStart=%h/ethercatdrone/bin/drone_app %h/ethercatdrone/config/default/hardware.json
+ExecStart=%h/ethercatdrone/bin/run.sh drone_app config/default/hardware.json
 Restart=on-failure
 RestartSec=3
 StandardOutput=journal
@@ -644,43 +695,79 @@ deploy_to_host() {
     fi
     ok "Connected to $host"
 
-    # Clean then create remote directory structure
-    ssh_cmd "$user" "$host" "rm -rf '${deploy_dir}/bin' '${deploy_dir}/config' '${deploy_dir}/scripts' '${deploy_dir}/lib' && mkdir -p '${deploy_dir}/bin' '${deploy_dir}/config' '${deploy_dir}/scripts' '${deploy_dir}/lib' '${deploy_dir}/logs'"
+    # Create remote directory structure
+    ssh_cmd "$user" "$host" "mkdir -p '${deploy_dir}/bin' '${deploy_dir}/config' '${deploy_dir}/scripts' '${deploy_dir}/lib' '${deploy_dir}/logs'"
 
-    # Upload each subdirectory separately
+    # Upload all staged files using tar-over-SSH (reliable, no SCP nesting issues)
     echo "  Uploading..."
-    local subdirs=(bin config scripts)
-    for sub in "${subdirs[@]}"; do
-        if [ -d "$DEPLOY_STAGING/$sub" ]; then
-            echo "    $sub/"
-            scp_push_dir "$DEPLOY_STAGING/$sub/" "$user" "$host" "$deploy_dir/$sub/" || {
-                err "SCP upload failed for $sub/"
-                return 1
-            }
-        fi
-    done
-
-    # Upload lib/ if it exists (fetched from target)
-    if [ -d "$DEPLOY_STAGING/lib" ]; then
-        echo "    lib/"
-        scp_push_dir "$DEPLOY_STAGING/lib/" "$user" "$host" "$deploy_dir/lib/"
+    if $DO_DRY_RUN; then
+        echo "[dry-run] Would tar-stream $DEPLOY_STAGING/ to $user@$host:$deploy_dir/"
+    elif [ -n "$REMOTE_PASSWORD" ]; then
+        sshpass -p "$REMOTE_PASSWORD" tar cf - -C "$DEPLOY_STAGING" . \
+            | sshpass -p "$REMOTE_PASSWORD" ssh -o StrictHostKeyChecking=accept-new \
+              -o ConnectTimeout=10 "$user@$host" \
+              "tar xf - -C '$deploy_dir'" || {
+            err "Upload failed for $label"
+            return 1
+        }
+    else
+        tar cf - -C "$DEPLOY_STAGING" . \
+            | ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+              "$user@$host" "tar xf - -C '$deploy_dir'" || {
+            err "Upload failed for $label"
+            return 1
+        }
     fi
 
-    # Run post-deploy setup
-    ssh_cmd "$user" "$host" "bash '$deploy_dir/scripts/setup.sh'"
+    # Verify uploads landed correctly
+    echo "  Verifying remote files..."
+    local verify_result
+    verify_result=$(ssh_cmd "$user" "$host" "find '$deploy_dir' -maxdepth 3 -type f 2>&1 | head -30") || {
+        err "Cannot verify files on $label"
+        return 1
+    }
+    echo "$verify_result" | sed 's/^/    /'
+    if ! echo "$verify_result" | grep -q 'drone_app'; then
+        err "drone_app not found on remote after upload — $label"
+        return 1
+    fi
+    ok "Files verified on $label"
+
+    # Run post-deploy setup on target
+    hdr "Running setup on $label"
+    if ! ssh_cmd "$user" "$host" "bash '$deploy_dir/setup.sh'"; then
+        err "Setup failed on $label — check output above"
+        return 1
+    fi
     ok "Deployed to $label → $deploy_dir"
 }
 
+# Track deployment results
+DEPLOY_ERRORS=0
+DEPLOY_SUCCESS=0
+
 if $DEPLOY_FLYBOARD_A; then
-    deploy_to_host "Flyboard A" "$FLYBOARD_A_USER" "$FLYBOARD_A_HOST" "$FLYBOARD_A_DEPLOY_DIR" || true
+    if deploy_to_host "Flyboard A" "$FLYBOARD_A_USER" "$FLYBOARD_A_HOST" "$FLYBOARD_A_DEPLOY_DIR"; then
+        ((DEPLOY_SUCCESS++)) || true
+    else
+        ((DEPLOY_ERRORS++)) || true
+    fi
 fi
 
 if $DEPLOY_FLYBOARD_B; then
-    deploy_to_host "Flyboard B" "$FLYBOARD_B_USER" "$FLYBOARD_B_HOST" "$FLYBOARD_B_DEPLOY_DIR" || true
+    if deploy_to_host "Flyboard B" "$FLYBOARD_B_USER" "$FLYBOARD_B_HOST" "$FLYBOARD_B_DEPLOY_DIR"; then
+        ((DEPLOY_SUCCESS++)) || true
+    else
+        ((DEPLOY_ERRORS++)) || true
+    fi
 fi
 
 if $DEPLOY_COMPANION; then
-    deploy_to_host "Companion"  "$COMPANION_USER" "$COMPANION_HOST" "$COMPANION_DEPLOY_DIR" || true
+    if deploy_to_host "Companion"  "$COMPANION_USER" "$COMPANION_HOST" "$COMPANION_DEPLOY_DIR"; then
+        ((DEPLOY_SUCCESS++)) || true
+    else
+        ((DEPLOY_ERRORS++)) || true
+    fi
 fi
 
 # ---- Done ----------------------------------------------------------------
@@ -695,12 +782,16 @@ $DEPLOY_FLYBOARD_A && echo "  Flyboard A:    $FLYBOARD_A_USER@$FLYBOARD_A_HOST:$
 $DEPLOY_FLYBOARD_B && echo "  Flyboard B:    $FLYBOARD_B_USER@$FLYBOARD_B_HOST:$FLYBOARD_B_DEPLOY_DIR"
 $DEPLOY_COMPANION  && echo "  Companion:     $COMPANION_USER@$COMPANION_HOST:$COMPANION_DEPLOY_DIR"
 echo ""
-echo "On target:"
-echo "  cd $FLYBOARD_A_DEPLOY_DIR && bash scripts/setup.sh   # Verify deployment"
-echo "  $FLYBOARD_A_DEPLOY_DIR/bin/drone_app                  # Run (default config)"
+
+if [ "$DEPLOY_ERRORS" -gt 0 ]; then
+    warn "$DEPLOY_ERRORS deployment(s) failed — see output above"
+    exit 1
+fi
+
+echo "To run on target:"
+echo "  ssh $FLYBOARD_A_USER@$FLYBOARD_A_HOST '$FLYBOARD_A_DEPLOY_DIR/bin/drone_app'"
 echo ""
-echo "To enable systemd service:"
-echo "  scp $DEPLOY_STAGING/scripts/ethercatdrone.service $FLYBOARD_A_USER@$FLYBOARD_A_HOST:/tmp/"
-echo "  ssh $FLYBOARD_A_USER@$FLYBOARD_A_HOST 'sudo mv /tmp/ethercatdrone.service /etc/systemd/system/'"
+echo "To enable systemd service on target:"
+echo "  ssh $FLYBOARD_A_USER@$FLYBOARD_A_HOST 'sudo mv $FLYBOARD_A_DEPLOY_DIR/ethercatdrone.service /etc/systemd/system/'"
 echo "  ssh $FLYBOARD_A_USER@$FLYBOARD_A_HOST 'sudo systemctl daemon-reload && sudo systemctl enable --now ethercatdrone'"
 echo ""

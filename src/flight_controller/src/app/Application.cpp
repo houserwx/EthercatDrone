@@ -154,6 +154,12 @@ void Application::run()
                         static_cast<int64_t>(cycleCount_),
                         maxOverrunNs_,
                         avgOverrunNs);
+                // Always print to stderr so it's visible even without gRPC/logger
+                std::fprintf(stderr,
+                    "\r[RT] cycles=%lu overruns=%d max=%lldns avg=%lldns",
+                    (unsigned long)cycleCount_, overrunCount_,
+                    (long long)maxOverrunNs_, (long long)avgOverrunNs);
+                fflush(stderr);
             }
         }
     }

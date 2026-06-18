@@ -1,0 +1,27 @@
+[Unit]
+Description=EtherCatDrone Real-Time Flight Controller
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=vis
+Group=vis
+WorkingDirectory=%h/ethercatdrone
+ExecStart=%h/ethercatdrone/bin/run.sh drone_app config/default/hardware.json
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ethercatdrone
+
+# Real-time scheduling (requires capability)
+# AmbientCapabilities=CAP_SYS_NICE
+# LimitRTPRIO=99
+# LimitRTTIME=infinity
+
+# Memory lock for RT thread
+# LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

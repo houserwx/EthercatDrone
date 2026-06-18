@@ -17,8 +17,28 @@ set(IGH_ETHERCAT_DIR "${CMAKE_SOURCE_DIR}/thirdparty/ethercat")
 
 # Detect cross-compilation
 if(CMAKE_CROSSCOMPILING)
-    message(STATUS "Cross-compiling — libethercat search skipped (target provides it)")
-    set(ETHERCAT_AVAILABLE OFF)
+    # Cross-compile: use local headers from thirdparty/,
+    # ETERCAT_LIB must be passed as -DETHERCAT_LIB=<aarch64 lib path> from deploy.sh
+    if(EXISTS "${IGH_ETHERCAT_DIR}/include")
+        find_path(ETHERCAT_INCLUDE_DIR NAMES ecrt.h
+            PATHS "${IGH_ETHERCAT_DIR}/include"
+            NO_DEFAULT_PATH
+        )
+        if(ETHERCAT_INCLUDE_DIR AND ETHERCAT_LIB)
+            set(ETHERCAT_AVAILABLE ON)
+            message(STATUS "Cross-compiling with EtherCAT support (headers from thirdparty/, lib=${ETHERCAT_LIB})")
+        else()
+            if(NOT ETHERCAT_LIB)
+                message(WARNING "EtherCAT cross-compile: pass -DETHERCAT_LIB=<aarch64 libethercat.so> or build stub")
+            else()
+                message(WARNING "ecrt.h not found in thirdparty/ethercat/include — EtherCAT stub mode")
+            endif()
+            set(ETHERCAT_AVAILABLE OFF)
+        endif()
+    else()
+        message(STATUS "thirdparty/ethercat not found — EtherCAT stub mode for cross-compile")
+        set(ETHERCAT_AVAILABLE OFF)
+    endif()
 else()
     find_library(ETHERCAT_LIB NAMES ethercat
         PATHS /usr/local/lib /usr/lib
