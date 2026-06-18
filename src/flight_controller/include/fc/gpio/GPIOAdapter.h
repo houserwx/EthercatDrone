@@ -118,6 +118,7 @@ private:
     std::vector<StubState> stubStates_;
 
     // Internal helpers
+    void discoverLines();
     bool openChip() noexcept;
     bool requestLine(GPIOLine& line, size_t index) noexcept;
     void closeChip() noexcept;

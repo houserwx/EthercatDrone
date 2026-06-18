@@ -39,6 +39,36 @@ else
     echo "✗ libethercat not found — EtherCAT adapter will be stub-only"
 fi
 
+# Configure libgpiod library path (GPIO adapter)
+GPIO_MODE="stub"
+
+# Check bundled lib/ first (from deploy fetch)
+if [ -d "$LIB_DIR" ] && ls "$LIB_DIR"/libgpiod.so* &>/dev/null; then
+    echo "✓ libgpiod found in lib/ — GPIO adapter will be active"
+    GPIO_MODE="active"
+    for so in "$LIB_DIR"/libgpiod.so.*; do
+        [ -f "$so" ] && cp -f "$so" "$LIB_DIR/libgpiod.so" 2>/dev/null || true
+    done
+# Check system-wide (libgpiod installed on target)
+elif ldconfig -p 2>/dev/null | grep -q libgpiod; then
+    echo "✓ libgpiod found system-wide (ldconfig) — GPIO adapter will be active"
+    GPIO_MODE="active"
+elif find /usr/lib /usr/local/lib -maxdepth 4 -name "libgpiod.so" 2>/dev/null | grep -q .; then
+    echo "✓ libgpiod found on disk — GPIO adapter will be active"
+    GPIO_MODE="active"
+else
+    echo "✗ libgpiod not found — GPIO adapter will be stub-only"
+    echo "  Install on target: sudo apt install libgpiod-dev"
+fi
+
+# Detect Pi variant
+PI_MODEL=$(cat /proc/device-tree/model 2>/dev/null | tr -d '\0' || echo "unknown")
+if [[ "$PI_MODEL" == *"Raspberry Pi"* ]]; then
+    echo "✓ Board: $PI_MODEL"
+else
+    echo "⚠ Board: unknown (not detected as Raspberry Pi)"
+fi
+
 # Verify binaries
 if [ -f "$BIN_DIR/drone_app" ]; then
     ARCH=$(file "$BIN_DIR/drone_app" | grep -oE 'aarch64|x86-64|ARM' | head -1 || echo "unknown")
@@ -92,7 +122,7 @@ if [ -d "$CONFIG_DIR" ]; then
 fi
 
 echo ""
-echo "=== Ready to run (EtherCAT: $ETHERCAT_MODE) ==="
+echo "=== Ready to run (EtherCAT: $ETHERCAT_MODE, GPIO: $GPIO_MODE) ==="
 echo "  $BIN_DIR/run.sh drone_app                                 # Default config"
 echo "  $BIN_DIR/run.sh drone_app config/default/hardware.json   # With config"
 echo "  $BIN_DIR/run.sh bench_test                                # Sim-only bench"

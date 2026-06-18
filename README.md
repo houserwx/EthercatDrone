@@ -220,6 +220,11 @@ cd build/debug-linux && ctest --output-on-failure
 
 Copyright © 2026 Jeffrey Houser. All rights reserved.
 
-This repository contains proprietary code. No part of this project may be copied, modified, or distributed without explicit written permission from the author.
+Licensed under the Commercial Restricted License (CRL) v1.1.
+
+- ✅ **Free** for non-commercial use
+- 💼 **Commercial license** required for business use
+
+Contact: jeff@recursedstudios.com
 
 https://www.linkedin.com/in/jeffrey-houser-0558855/

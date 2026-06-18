@@ -34,15 +34,10 @@ GPIOAdapter::GPIOAdapter(BoardVariant variant, std::string chipPath)
 }
 
 // ---------------------------------------------------------------------------
-// Initialize — open chip, request lines, create PDOs
+// Initialize — open chip, discover lines, create PDOs, populate catalog
 // ---------------------------------------------------------------------------
 bool GPIOAdapter::initialize()
 {
-    if (lines_.empty()) {
-        std::fprintf(stderr, "[GPIOAdapter] No GPIO lines registered\n");
-        return false;
-    }
-
     // Detect board variant if still unknown
     if (variant_ == BoardVariant::UNKNOWN) {
         variant_ = detectBoardVariant();
@@ -51,7 +46,7 @@ bool GPIOAdapter::initialize()
         }
     }
 
-#if HAS_LIBGPIOD
+  #if HAS_LIBGPIOD
     // Try to open real GPIO chip
     if (!openChip()) {
         std::fprintf(stderr, "[GPIOAdapter] Cannot open %s — falling back to stub mode\n",
@@ -63,15 +58,18 @@ bool GPIOAdapter::initialize()
     stubMode_ = true;
 #endif
 
+    // Discover GPIO lines — auto-populate all available lines in the catalog
+    discoverLines();
+
     if (stubMode_) {
-        // Initialize stub states
+        // Initialize stub states for discovered lines
         stubStates_.resize(lines_.size());
         for (size_t i = 0; i < lines_.size(); ++i) {
             stubStates_[i].value = lines_[i].initialVal;
             stubStates_[i].toggleCycle = 0;
         }
     } else {
-        // Request each line from the GPIO chip
+        // Request each discovered line from the GPIO chip
         for (size_t i = 0; i < lines_.size(); ++i) {
             if (!requestLine(lines_[i], i)) {
                 std::fprintf(stderr, "[GPIOAdapter] Cannot request line %u (%s) — will skip\n",
@@ -114,6 +112,64 @@ bool GPIOAdapter::initialize()
     }
 
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// discoverLines() — scan GPIO chip and populate catalog with all available lines
+// ---------------------------------------------------------------------------
+void GPIOAdapter::discoverLines()
+{
+    uint32_t total_lines = gpioLineCount(variant_);
+
+#if HAS_LIBGPIOD
+    if (!stubMode_ && handles_.size() > 0 && handles_[0].gpiod_chip) {
+        // Query actual line count from the chip
+        auto* chip = static_cast<struct gpiod_chip*>(handles_[0].gpiod_chip);
+        total_lines = static_cast<uint32_t>(gpiod_chip_get_line_count(chip));
+    }
+#endif
+
+    std::printf("[GPIOAdapter] Discovered %u GPIO lines on %s\n",
+                total_lines, chipPath_.c_str());
+
+    // Reserve handles upfront
+    handles_.resize(total_lines);
+
+    // Discover each line — default all as input (safe default)
+    for (uint32_t i = 0; i < total_lines; ++i) {
+        GPIOLine line;
+        line.offset = i;
+        line.direction = LineDirection::INPUT;
+
+        // Create human-readable name
+        char name_buf[64];
+        std::snprintf(name_buf, sizeof(name_buf), "GPIO%u", i);
+        line.name = name_buf;
+
+        // Create PDO entry for this line
+        fc::pdo::PDOEntry entry;
+        entry.type = fc::pdo::EntryType::DigitalInput;
+        entry.uuid = "GPIO|" + std::to_string(i);
+        line.entry = &entry;
+
+        lines_.push_back(std::move(line));
+
+        // Register in hardware catalog
+        if (catalog_) {
+            fc::pdo::CatalogEntry catEntry;
+            catEntry.key = "GPIO|00|" + std::to_string(i);
+            catEntry.uuid = entry.uuid;
+            catEntry.channelType = "DigitalInput";
+            catEntry.name = "GPIO" + std::to_string(i);
+            catEntry.slaveName = variant_ == BoardVariant::RASPBERRY_PI_5 ? "BCM2712" :
+                                 variant_ == BoardVariant::RASPBERRY_PI_4 ? "BCM2711" : "GPIO";
+            catEntry.slavePos = 0;
+            catEntry.isOutput = false;
+            catalog_->addEntry(std::move(catEntry));
+        }
+    }
+
+    std::printf("[GPIOAdapter] Registered %zu GPIO lines in catalog\n", lines_.size());
 }
 
 // ---------------------------------------------------------------------------
