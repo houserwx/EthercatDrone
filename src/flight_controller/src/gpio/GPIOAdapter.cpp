@@ -125,7 +125,7 @@ void GPIOAdapter::discoverLines()
     if (!stubMode_ && handles_.size() > 0 && handles_[0].gpiod_chip) {
         // Query actual line count from the chip
         auto* chip = static_cast<struct gpiod_chip*>(handles_[0].gpiod_chip);
-        total_lines = static_cast<uint32_t>(gpiod_chip_get_line_count(chip));
+        total_lines = static_cast<uint32_t>(gpiod_chip_num_lines(chip));
     }
 #endif
 
