@@ -167,6 +167,36 @@ scp_pull_cmd() {
     fi
 }
 
+# Push a file TO a remote destination
+scp_push_cmd() {
+    local src="$1" user="$2" host="$3" dst="$4"
+    if $DO_DRY_RUN; then
+        echo "[dry-run] scp $src $user@$host:$dst"
+    elif [ -n "$REMOTE_PASSWORD" ]; then
+        sshpass -p "$REMOTE_PASSWORD" scp \
+            -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+            "$src" "$user@$host:$dst"
+    else
+        scp -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+            "$src" "$user@$host:$dst"
+    fi
+}
+
+# Push a directory recursively TO a remote destination
+scp_push_dir() {
+    local src="$1" user="$2" host="$3" dst="$4"
+    if $DO_DRY_RUN; then
+        echo "[dry-run] scp -r $src $user@$host:$dst"
+    elif [ -n "$REMOTE_PASSWORD" ]; then
+        sshpass -p "$REMOTE_PASSWORD" scp -r \
+            -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+            "$src" "$user@$host:$dst"
+    else
+        scp -r -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+            "$src" "$user@$host:$dst"
+    fi
+}
+
 # Run a sudo command remotely using the sudo password
 sudo_ssh_cmd() {
     local user="$1" host="$2" cmd="$3"
@@ -525,7 +555,7 @@ fi
 
 # Verify binaries
 if [ -f "$BIN_DIR/drone_app" ]; then
-    ARCH=$(file "$BIN_DIR/drone_app" | grep -o 'aarch64\|x86-64\|ARM' || echo "unknown")
+    ARCH=$(file "$BIN_DIR/drone_app" | grep -oE 'aarch64|x86-64|ARM' | head -1 || echo "unknown")
     echo "✓ drone_app architecture: $ARCH"
 
     # Quick smoke test (use ${VAR:-} to handle unset LD_LIBRARY_PATH with set -u)
@@ -602,38 +632,43 @@ deploy_to_host() {
 
     hdr "Deploy → $label ($user@$host)"
 
-    # Test connectivity
-    if ! $DO_DRY_RUN; then
-        if ! ssh_cmd "$user" "$host" "echo ok" &>/dev/null; then
-            err "Cannot reach $user@$host — check SSH/network"
-            echo "  Fix: ssh $user@$host"
-            return 1
-        fi
-        ok "Connected to $host"
+    if $DO_DRY_RUN; then
+        echo "[dry-run] Would deploy to $user@$host:$deploy_dir"
+        return 0
     fi
 
-    # Create remote directory structure (scp -r won't create intermediate dirs)
-    ssh_cmd "$user" "$host" "mkdir -p $deploy_dir/bin $deploy_dir/config $deploy_dir/scripts $deploy_dir/lib $deploy_dir/logs"
+    # Test connectivity
+    if ! ssh_cmd "$user" "$host" "echo ok" &>/dev/null; then
+        err "Cannot reach $user@$host — skipping"
+        return 1
+    fi
+    ok "Connected to $host"
+
+    # Create remote directory structure (scp won't create intermediate dirs)
+    ssh_cmd "$user" "$host" "mkdir -p '$deploy_dir/bin' '$deploy_dir/config' '$deploy_dir/scripts' '$deploy_dir/lib' '$deploy_dir/logs'"
 
     # Upload deployment package
-    scp_dir_cmd "$DEPLOY_STAGING/." "$user" "$host" "$deploy_dir/"
+    echo "  Uploading..."
+    if ! scp_push_dir "$DEPLOY_STAGING/." "$user" "$host" "$deploy_dir/"; then
+        err "SCP upload failed"
+        return 1
+    fi
 
-    # Run post-deploy setup (handles sudo internally via setup.sh)
+    # Run post-deploy setup
     ssh_cmd "$user" "$host" "bash '$deploy_dir/scripts/setup.sh'"
-
     ok "Deployed to $label → $deploy_dir"
 }
 
 if $DEPLOY_FLYBOARD_A; then
-    deploy_to_host "Flyboard A" "$FLYBOARD_A_USER" "$FLYBOARD_A_HOST" "$FLYBOARD_A_DEPLOY_DIR"
+    deploy_to_host "Flyboard A" "$FLYBOARD_A_USER" "$FLYBOARD_A_HOST" "$FLYBOARD_A_DEPLOY_DIR" || true
 fi
 
 if $DEPLOY_FLYBOARD_B; then
-    deploy_to_host "Flyboard B" "$FLYBOARD_B_USER" "$FLYBOARD_B_HOST" "$FLYBOARD_B_DEPLOY_DIR"
+    deploy_to_host "Flyboard B" "$FLYBOARD_B_USER" "$FLYBOARD_B_HOST" "$FLYBOARD_B_DEPLOY_DIR" || true
 fi
 
 if $DEPLOY_COMPANION; then
-    deploy_to_host "Companion"  "$COMPANION_USER" "$COMPANION_HOST" "$COMPANION_DEPLOY_DIR"
+    deploy_to_host "Companion"  "$COMPANION_USER" "$COMPANION_HOST" "$COMPANION_DEPLOY_DIR" || true
 fi
 
 # ---- Done ----------------------------------------------------------------
