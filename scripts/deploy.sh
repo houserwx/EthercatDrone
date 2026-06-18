@@ -367,8 +367,22 @@ fi
 
 # ---- 5. Stage deployment -------------------------------------------------
 hdr "Staging Deployment"
+
+# Preserve lib/ from step 2 (fetch_ethercat_from_target) before wiping staging
+LIB_BACKUP=""
+if [ -d "$DEPLOY_STAGING/lib" ]; then
+    LIB_BACKUP="$(mktemp -d)"
+    mv "$DEPLOY_STAGING/lib" "$LIB_BACKUP/"
+fi
+
 rm -rf "$DEPLOY_STAGING"
 mkdir -p "$DEPLOY_STAGING"/{bin,config,scripts}
+
+# Restore lib/ if it was preserved
+if [ -n "$LIB_BACKUP" ] && [ -d "$LIB_BACKUP/lib" ]; then
+    mv "$LIB_BACKUP/lib" "$DEPLOY_STAGING/"
+    rmdir "$LIB_BACKUP" 2>/dev/null || true
+fi
 
 # Copy binaries
 for exe in drone_app bench_test mission_bench_test; do
@@ -443,11 +457,11 @@ fi
 if [ -f "$BIN_DIR/drone_app" ]; then
     ARCH=$(file "$BIN_DIR/drone_app" | grep -o 'aarch64\|x86-64\|ARM' || echo "unknown")
     echo "✓ drone_app architecture: $ARCH"
-    
-    # Quick smoke test
-    LD_LIBRARY_PATH="${LIB_DIR}:${LD_LIBRARY_PATH}" "$BIN_DIR/drone_app" --help >/dev/null 2>&1 || \
-    LD_LIBRARY_PATH="${LIB_DIR}:${LD_LIBRARY_PATH}" "$BIN_DIR/drone_app" -h >/dev/null 2>&1 || \
-    (timeout 2 LD_LIBRARY_PATH="${LIB_DIR}:${LD_LIBRARY_PATH}" "$BIN_DIR/drone_app" 2>&1 | head -1) >/dev/null 2>&1 || true
+
+    # Quick smoke test (use ${VAR:-} to handle unset LD_LIBRARY_PATH with set -u)
+    LD_LIBRARY_PATH="${LIB_DIR}:${LD_LIBRARY_PATH:-}" "$BIN_DIR/drone_app" --help >/dev/null 2>&1 || \
+    LD_LIBRARY_PATH="${LIB_DIR}:${LD_LIBRARY_PATH:-}" "$BIN_DIR/drone_app" -h >/dev/null 2>&1 || \
+    (timeout 2 env LD_LIBRARY_PATH="${LIB_DIR}:${LD_LIBRARY_PATH:-}" "$BIN_DIR/drone_app" 2>&1 | head -1) >/dev/null 2>&1 || true
     echo "✓ drone_app smoke test passed"
 else
     echo "✗ drone_app not found"
