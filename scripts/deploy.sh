@@ -503,28 +503,24 @@ echo "✓ Log directory created"
 
 # Configure libethercat library path
 ETHERCAT_MODE="stub"
+
+# Check bundled lib/ first (from deploy fetch)
 if [ -d "$LIB_DIR" ] && ls "$LIB_DIR"/libethercat.so* &>/dev/null; then
     echo "✓ libethercat found in lib/ — EtherCAT adapter will be active"
     ETHERCAT_MODE="active"
-    
-    # Ensure symlinks are correct
     for so in "$LIB_DIR"/libethercat.so.*; do
-        if [ -f "$so" ]; then
-            cp -f "$so" "$LIB_DIR/libethercat.so" 2>/dev/null || true
-        fi
+        [ -f "$so" ] && cp -f "$so" "$LIB_DIR/libethercat.so" 2>/dev/null || true
     done
-    
-    # Add to system library cache (requires sudo)
-    if [ -w /etc/ld.so.conf.d ]; then
-        echo "$LIB_DIR" | sudo tee /etc/ld.so.conf.d/ethercatdrone.conf >/dev/null 2>&1 && \
-            sudo ldconfig 2>/dev/null && echo "✓ ldconfig updated" || \
-            echo "  (ldconfig update failed — LD_LIBRARY_PATH fallback will be used)"
-    fi
-elif command -v dpkg &>/dev/null && dpkg -l | grep -q ethercat 2>/dev/null; then
-    echo "✓ libethercat found system-wide — EtherCAT adapter will be active"
+# Check system-wide (IgH Master installed on target)
+elif ldconfig -p 2>/dev/null | grep -q libethercat; then
+    echo "✓ libethercat found system-wide (ldconfig) — EtherCAT adapter will be active"
     ETHERCAT_MODE="active"
+elif find /usr/lib /usr/local/lib -maxdepth 4 -name "libethercat.so" 2>/dev/null | grep -q .; then
+    echo "✓ libethercat found on disk — EtherCAT adapter will be active"
+    ETHERCAT_MODE="active"
+    sudo ldconfig 2>/dev/null || true
 else
-    echo "  libethercat not found — EtherCAT adapter will be stub-only"
+    echo "✗ libethercat not found — EtherCAT adapter will be stub-only"
 fi
 
 # Verify binaries
