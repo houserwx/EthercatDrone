@@ -66,6 +66,59 @@ navi  →  flight_controller  →  imu  →  common
 
 ---
 
+## Hardware Backend Adapters
+
+All hardware communication goes through the **`IHardwareAdapter`** interface — a single abstract class with only 2 virtual calls per backend per RT cycle. This keeps the hot path deterministic while allowing any transport protocol to plug in.
+
+### Backend Status
+
+| Backend | Transport | Status | Notes |
+|---|---|---|---|
+| **EthercatAdapter** | EtherCAT (IgH Master) | ✅ Production | Full PDO mapping, DC sync, hardware catalog, slave scan |
+| **SimulatedAdapter** | In-process synthetic | ✅ Production | Physics-based IMU/motor simulation, fault injection |
+| **I2CAdapter** | Linux I²C sysfs/dev | 🔧 Stub | Structure complete; real I²C comms pending hardware |
+| **SPIAdapter** | Linux SPI sysfs/dev | 🔧 Stub | Structure complete; real SPI comms pending hardware |
+| **GrpcAdapter** | gRPC message channels | ✅ Production | Bidirectional trigger/result relay with VectorBuffer |
+
+### Planned Backends
+
+| Backend | Transport | Phase | Notes |
+|---|---|---|---|
+| **GPIOAdapter** | Linux sysfs/gpiochip | Phase 2 | Digital I/O for E-Stop, indicators, relay control |
+| **CANAdapter** | SocketCAN / UAVCAN | Phase 3 | DroneCAN/Cyphal ecosystem integration |
+| **USBAdapter** | libusb | Phase 3 | Serial telemetry radios, USB-connected sensors |
+
+### Adding a New Backend
+
+Implementing a new hardware backend takes ~3 steps and ~100 lines of code:
+
+```
+1. Create a class inheriting from fc::pdo::IHardwareAdapter
+2. Implement initialize(), onBeforeReadInputs(), onAfterWriteOutputs()
+3. Register PDO entries during init — the RT cycle handles the rest
+```
+
+The `I2CAdapter` and `SPIAdapter` are good reference implementations — both are short, well-commented, and follow the same pattern. No changes to the core RT cycle, PDO system, or application layer are needed.
+
+```cpp
+// Minimal example: custom ADC backend
+class MyADCAdapter : public fc::pdo::IHardwareAdapter {
+public:
+    bool initialize() override {
+        // Open device, register PDOs, create entries
+        return true;
+    }
+    void onBeforeReadInputs() noexcept override {
+        // Read raw ADC values into PDO image buffers
+    }
+    void onAfterWriteOutputs() noexcept override {
+        // Flush any DAC outputs from PDO image buffers
+    }
+};
+```
+
+---
+
 ## Requirements
 
 | Tool | Version | Notes |
