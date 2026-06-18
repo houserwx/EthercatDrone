@@ -206,6 +206,7 @@ public:
     [[nodiscard]]       fc::wrapper::AnalogOutputWrapper&  analogOutput (int idx)       noexcept { return analogOutputs_[static_cast<std::size_t>(idx)]; }
     [[nodiscard]] const fc::wrapper::AnalogInputWrapper&   analogInput  (int idx) const noexcept { return analogInputs_ [static_cast<std::size_t>(idx)]; }
     [[nodiscard]]       fc::wrapper::MessageOutWrapper&    msgOut       (int idx)       noexcept { return msgOuts_    [static_cast<std::size_t>(idx)]; }
+    [[nodiscard]]       fc::wrapper::MessageInWrapper&     msgIn        (int idx)       noexcept { return msgIns_     [static_cast<std::size_t>(idx)]; }
     [[nodiscard]] const fc::wrapper::MessageInWrapper&     msgIn        (int idx) const noexcept { return msgIns_     [static_cast<std::size_t>(idx)]; }
     [[nodiscard]]       fc::wrapper::IMUWrapper&           imu          (int idx)       noexcept { return imus_       [static_cast<std::size_t>(idx)]; }
     [[nodiscard]] const fc::wrapper::IMUWrapper&           imu          (int idx) const noexcept { return imus_       [static_cast<std::size_t>(idx)]; }
