@@ -78,25 +78,50 @@ navi  →  flight_controller  →  imu  →  common
 
 ---
 
-## Build
+## Quick Start
 
 ```bash
-./build.sh                    # Standard build → build/debug-linux/
-./build.sh --dev              # Build + cppcheck + clang-tidy
-./build.sh --clean            # Clean build directory first
-./build.sh --install          # Install build and dev dependencies
-./build.sh --analysis-only    # Run static analysis without rebuilding
-./build.sh --fix              # Apply safe clang-tidy fixes automatically
+# 1. Install dependencies
+./build.sh --install               # Build deps only
+./build.sh --install --dev         # Build + dev tools (clang-tidy, cppcheck)
+
+# 2. Build
+./build.sh                         # Standard debug build
+./build.sh --release               # Release build
+./build.sh --dev                   # Build + static analysis
+./build.sh --test                  # Build + run CTest suite
+./build.sh --clean                 # Clean build dir first
+./build.sh --fix                   # Apply clang-tidy auto-fixes
+
+# 3. Run
+./build/debug-linux/src/main/drone_app       # Default config
+./build/debug-linux/src/main/bench_test      # Sim-only bench test
 ```
+
+## Cross-Compile & Deploy
+
+```bash
+# Cross-compile for ARM64 and deploy to target boards
+./scripts/deploy.sh --flyboard-a          # Deploy to primary RT board
+./scripts/deploy.sh --flyboard-b          # Deploy to hot-standby board
+./scripts/deploy.sh --companion           # Deploy to companion board
+./scripts/deploy.sh --all                 # Deploy to all targets
+./scripts/deploy.sh --all --dry-run       # Preview without deploying
+./scripts/deploy.sh --all --test          # Host tests before deploy
+./scripts/deploy.sh --clean --all         # Fresh cross-compile + deploy
+```
+
+Target IPs and paths are configurable via environment variables. See `scripts/deploy.sh --help`.
 
 ---
 
 ## Run
 
 ```bash
-./build/debug-linux/drone_app                                    # default config
-./build/debug-linux/drone_app config/factory-test/hardware.json  # alternate config
-./build/debug-linux/bench_test                                   # sim-only bench test
+./build/debug-linux/src/main/drone_app             # default config
+./build/debug-linux/src/main/drone_app <config>    # alternate config
+./build/debug-linux/src/main/bench_test            # sim-only bench test
+./build/debug-linux/src/main/mission_bench_test    # mission simulation
 ```
 
 ---
