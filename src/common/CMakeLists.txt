@@ -10,6 +10,11 @@ set(COMMON_SOURCES
     src/log/sinks/LogStreamSink.cpp
     src/config/Config.cpp
     src/messages/Message.cpp
+    src/menu/ConfigDisplayPanel.cpp
+    src/menu/SimulatedEntryPanel.cpp
+    src/menu/PdoMappingPanel.cpp
+    src/menu/CycleTimePanel.cpp
+    src/menu/MainMenu.cpp
 )
 
 add_library(common STATIC ${COMMON_SOURCES})

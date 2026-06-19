@@ -22,6 +22,7 @@
 #include "common/rt/ThreadBuffer.h"
 
 #include <atomic>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <span>
@@ -59,6 +60,13 @@ public:
     void start();
     void stop();
 
+    /// Temporarily pause the service thread (e.g. during interactive TTY input).
+    /// Blocks until the service thread has actually stopped draining.
+    /// Buffered entries are preserved — will be drained after resume.
+    void pause();
+    /// Resume a previously paused service thread. No-op if not started.
+    void resume();
+
     /// Register a thread and get its SPSC buffer.  Safe from any thread.
     /// Returns nullptr on overflow.
     common::ThreadBuffer* registerThread(bool isRt);
@@ -81,7 +89,12 @@ private:
 
     LoggerConfiguration config_;
     std::atomic<bool>   running_{false};
+    std::atomic<bool>   paused_{false};
+    std::atomic<bool>   pausedAcknowledged_{false};
     std::thread         serviceThread_;
+
+    std::mutex           pauseMutex_;
+    std::condition_variable pauseCv_;
 
     std::mutex              registrationMutex_;
     std::vector<ThreadInfo> threadBuffers_;

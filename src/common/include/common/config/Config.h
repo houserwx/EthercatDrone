@@ -43,6 +43,9 @@ struct Config {
     std::vector<PdoEntryDef> pdoEntries;
 
     static Config loadFromJson(const std::string& path);
+
+    /// Serialize config to JSON and write to the given path.
+    bool saveToJson(const std::string& path) const;
 };
 
 } // namespace common::config

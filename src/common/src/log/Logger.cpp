@@ -61,6 +61,25 @@ void Logger::stop()
     }
 }
 
+void Logger::pause()
+{
+    // Reset acknowledgment from previous pause
+    pausedAcknowledged_.store(false, std::memory_order_seq_cst);
+
+    // Signal service thread to stop
+    paused_.store(true, std::memory_order_seq_cst);
+
+    // Wait until the service thread acknowledges it has stopped draining
+    std::unique_lock<std::mutex> lock(pauseMutex_);
+    pauseCv_.wait_for(lock, std::chrono::milliseconds(500),
+        [this] { return pausedAcknowledged_.load(std::memory_order_seq_cst); });
+}
+
+void Logger::resume()
+{
+    paused_.store(false, std::memory_order_release);
+}
+
 common::ThreadBuffer* Logger::registerThread(bool isRt)
 {
     std::lock_guard<std::mutex> lock(registrationMutex_);
@@ -82,7 +101,16 @@ common::ThreadBuffer* Logger::registerThread(bool isRt)
 void Logger::serviceLoop()
 {
     while (running_.load(std::memory_order_relaxed)) {
-        drainAll();
+        if (!paused_.load(std::memory_order_acquire)) {
+            drainAll();
+        } else {
+            // Acknowledge pause — signal waiting threads
+            pausedAcknowledged_.store(true, std::memory_order_release);
+            {
+                std::lock_guard<std::mutex> lock(pauseMutex_);
+            }
+            pauseCv_.notify_all();
+        }
         std::this_thread::sleep_for(10ms);
     }
 }
