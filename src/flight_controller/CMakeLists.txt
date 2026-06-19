@@ -3,10 +3,8 @@
 # PDO system + backend adapters now provided by libdynamichardware submodule.
 
 set(FC_SOURCES
-    # MachineStatePDO (safety-specific, stays in project)
-    src/pdo/MachineStatePDO.cpp
-    # gRPC adapter (project-specific messaging, stays in project)
-    src/grpc/GrpcAdapter.cpp
+    # gRPC wrapper (application-layer message relay, stays in project)
+    src/grpc/GrpcWrapper.cpp
     # Motor control (control logic, not hardware transport)
     src/motor/MotorController.cpp
     # Safety
@@ -23,7 +21,6 @@ set(FC_SOURCES
     # Mission planning
     src/mission/MissionQueue.cpp
     src/mission/MissionEvaluator.cpp
-    src/mission/MissionStatePDO.cpp
     # Services
     src/services/GrpcService.cpp
 )

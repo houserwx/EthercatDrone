@@ -12,10 +12,10 @@ std::unique_ptr<Queue> createQueue()
 }
 
 std::unique_ptr<Queue> Queue::loadFromJson(const std::string& path,
-                                           fc::pdo::HardwareRegistry& registry)
+                                           dynamichardware::DynamicHardwareContext* ctx)
 {
     (void)path;
-    (void)registry;
+    (void)ctx;
     return createQueue();
 }
 

@@ -1,34 +1,34 @@
-#include "fc/grpc/GrpcAdapter.h"
+#include "fc/grpc/GrpcWrapper.h"
 
 namespace fc::grpc {
 
-GrpcAdapter::GrpcAdapter(std::string name)
+GrpcWrapper::GrpcWrapper(std::string name)
     : name_(std::move(name))
 {
 }
 
-void GrpcAdapter::reserve(std::size_t n)
+void GrpcWrapper::reserve(std::size_t n)
 {
-    pdos_[0].entries.reserve(n * 2);
+    entries_.reserve(n * 2);
     channels_.reserve(n);
 }
 
-int GrpcAdapter::addChannel(std::string name, uint32_t simFailMod)
+int GrpcWrapper::addChannel(std::string name, uint32_t simFailMod)
 {
     const int idx = static_cast<int>(channels_.size());
 
     // MessageOut entry
-    fc::pdo::PDOEntry outEntry;
-    outEntry.type = fc::pdo::EntryType::MessageOut;
+    dynamichardware::pdo::PDOEntry outEntry;
+    outEntry.type = dynamichardware::pdo::EntryType::MessageOut;
     outEntry.uuid = name_ + ".out." + std::to_string(idx);
 
     // MessageIn entry
-    fc::pdo::PDOEntry inEntry;
-    inEntry.type = fc::pdo::EntryType::MessageIn;
+    dynamichardware::pdo::PDOEntry inEntry;
+    inEntry.type = dynamichardware::pdo::EntryType::MessageIn;
     inEntry.uuid = name_ + ".in." + std::to_string(idx);
 
-    pdos_[0].entries.push_back(std::move(outEntry));
-    pdos_[0].entries.push_back(std::move(inEntry));
+    entries_.push_back(std::move(outEntry));
+    entries_.push_back(std::move(inEntry));
 
     auto ch = std::make_unique<Channel>();
     ch->name = std::move(name);
@@ -38,17 +38,23 @@ int GrpcAdapter::addChannel(std::string name, uint32_t simFailMod)
     return idx;
 }
 
-bool GrpcAdapter::initialize()
+dynamichardware::pdo::PDOEntry& GrpcWrapper::outEntry(int ch) noexcept
 {
-    pdos_[0].freeze();
-    return true;
+    return entries_[static_cast<std::size_t>(ch) * 2];
 }
 
-void GrpcAdapter::onBeforeReadInputs() noexcept
+dynamichardware::pdo::PDOEntry& GrpcWrapper::inEntry(int ch) noexcept
 {
+    return entries_[static_cast<std::size_t>(ch) * 2 + 1];
+}
+
+void GrpcWrapper::flushInputs() noexcept
+{
+    // Pop results from resultIn queues, write to PDOEntry inbound message slots.
+    // Call before ctx->readAll() so application logic sees fresh results.
     for (std::size_t i = 0; i < channels_.size(); ++i) {
         auto& ch = channels_[i];
-        fc::pdo::PDOEntry& inEntry = pdos_[0].entries[i * 2 + 1];
+        dynamichardware::pdo::PDOEntry& inEntry = entries_[i * 2 + 1];
 
         GrpcResultMessage msg;
         if (ch->resultIn.tryPop(msg)) {
@@ -57,11 +63,13 @@ void GrpcAdapter::onBeforeReadInputs() noexcept
     }
 }
 
-void GrpcAdapter::onAfterWriteOutputs() noexcept
+void GrpcWrapper::drainOutputs() noexcept
 {
+    // Read armed outbound messages from PDOEntry message slots.
+    // Call after ctx->writeAll() so we drain what the RT thread armed this cycle.
     for (std::size_t i = 0; i < channels_.size(); ++i) {
         auto& ch = channels_[i];
-        fc::pdo::PDOEntry& outEntry = pdos_[0].entries[i * 2];
+        dynamichardware::pdo::PDOEntry& outEntry = entries_[i * 2];
 
         GrpcTriggerMessage trig;
         if (outEntry.tryConsumeOutMessage(trig)) {

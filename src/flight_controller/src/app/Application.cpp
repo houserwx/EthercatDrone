@@ -35,7 +35,7 @@ namespace {
 
 namespace fc::app {
 
-Application::Application(fc::pdo::HardwareRegistry& registry, uint32_t cycleNs)
+Application::Application(dynamichardware::DynamicHardwareContext* ctx, uint32_t cycleNs)
     : common::rt::Threadrunner(common::rt::ThreadConfiguration{
           .name               = "Application",
           .cpuCore            = -1,
@@ -43,7 +43,7 @@ Application::Application(fc::pdo::HardwareRegistry& registry, uint32_t cycleNs)
           .useRealtime        = true,
           .stackPrefaultBytes = 0UL
       })
-    , registry_(registry)
+    , ctx_(ctx)
     , cycleNs_(cycleNs)
 {
 }
@@ -140,9 +140,9 @@ void Application::run()
 
         common::rt::signalProcessTickNow();
 
-        registry_.readAll();
+        ctx_->readAll();
         rtCycle();
-        registry_.writeAll();
+        ctx_->writeAll();
 
         if (cycleNs_ > 0) {
             const uint64_t dumpEvery = 5'000'000'000ULL / cycleNs_;

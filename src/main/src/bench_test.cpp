@@ -1,13 +1,12 @@
 // ============================================================================
 // bench_test.cpp — Bench test harness (sim-only, fault injection).
 //
-// Runs the full RT control loop with SimulatedAdapter only.
-// No EtherCAT hardware required.
+// Runs the full RT control loop with DynamicHardwareContext (simulation).
+// No real hardware required.
 // ============================================================================
 
 #include "common/config/Config.h"
-#include "fc/simulated/SimulatedAdapter.h"
-#include "fc/pdo/HardwareRegistry.h"
+#include "dynamichardware/DynamicHardwareContext.h"
 #include "fc/app/Application.h"
 #include "common/log/Logger.h"
 #include "common/log/LogHelper.h"
@@ -60,22 +59,32 @@ int main(int argc, char* argv[])
 
     const uint32_t cycleNs = cfg.cycleNs();
 
-    // --- Build hardware registry (sim-only) --------------------------------
-    fc::pdo::HardwareRegistry registry;
+    // --- Build DynamicHardwareContext (sim-only) ---------------------------
+    auto ctx = dynamichardware::DynamicHardwareContext::builder()
+        .catalogPath(cfg.hardwareCatalogPath)
+        .withSimulation()
+        .build();
 
-    auto sim = std::make_unique<fc::simulated::SimulatedAdapter>();
-    sim->setCycleTimeUs(cfg.cycleTimeUs);
-    if (!sim->initialize()) {
+    if (!ctx) {
         common::log::logError(messages::MessageId::MAIN_SIM_INIT_FAILED);
         common::log::Logger::instance().stop();
         return 1;
     }
-    registry.addBackend(std::move(sim));
 
-    registry.freezeForRt();
+    if (!ctx->build()) {
+        common::log::logError(messages::MessageId::MAIN_SIM_INIT_FAILED);
+        common::log::Logger::instance().stop();
+        return 1;
+    }
+
+    if (!ctx->freeze()) {
+        common::log::logError(messages::MessageId::MAIN_SIM_INIT_FAILED);
+        common::log::Logger::instance().stop();
+        return 1;
+    }
 
     // --- Application -------------------------------------------------------
-    fc::app::Application app(registry, cycleNs);
+    fc::app::Application app(ctx.get(), cycleNs);
     gApp = &app;
 
     app.start();

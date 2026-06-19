@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/rt/Threadrunner.h"
-#include "fc/pdo/HardwareRegistry.h"
+#include "dynamichardware/DynamicHardwareContext.h"
 #include "fc/safety/MachineStateController.h"
 #include "fc/app/Queue.h"
 #include "fc/mission/MissionQueue.h"
@@ -25,7 +25,7 @@ namespace fc::app {
 
 class Application final : public common::rt::Threadrunner {
 public:
-    Application(fc::pdo::HardwareRegistry& registry, uint32_t cycleNs);
+    Application(dynamichardware::DynamicHardwareContext* ctx, uint32_t cycleNs);
 
     ~Application() override = default;
 
@@ -58,8 +58,8 @@ public:
 private:
     void rtCycle() noexcept;
 
-    fc::pdo::HardwareRegistry& registry_;
-    uint32_t                    cycleNs_;
+    dynamichardware::DynamicHardwareContext* ctx_;
+    uint32_t                                 cycleNs_;
 
     fc::safety::MachineStateController stateMachine_;
 

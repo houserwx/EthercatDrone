@@ -1,24 +1,25 @@
 #pragma once
-#include "fc/pdo/PDO.h"
+#include "dynamichardware/pdo/PDO.h"
 #include "imu/ImuTypes.h"
 #include "imu/ImuCalibration.h"
 
 #include <string>
 
 // ============================================================
-// IMUWrapper — typed accessor for 6× PDOEntries representing
+// IMUWrapper — typed accessor for 6 PDOEntries representing
 // gyroscope (X/Y/Z) and accelerometer (X/Y/Z) channels.
 //
-// Holds stable PDOEntry& references resolved once at init time
-// via HardwareRegistry::lookupByUuid().  In the RT loop each
-// accessor is a single struct member read — zero lookup,
+// Domain semantics (scaling, units conversion) live here,
+// not in the hardware library.
+// Holds stable PDOEntry& references resolved once at init time.
+// In the RT loop each accessor is a single struct member read — zero lookup,
 // zero virtual dispatch.
 //
 // Calibration is applied at the wrapper level using ImuCalibration
 // from libimu.  Raw values are also available for diagnostics.
 //
 // Lifetime: the referenced PDOEntries live in the frozen PDO owned
-// by a backend (I2C, SPI, or EtherCAT).  Backends outlive all wrappers.
+// by a backend.  Backends outlive all wrappers.
 // ============================================================
 
 namespace fc::wrapper {
@@ -35,8 +36,8 @@ public:
     /// @param accelZEntry  PDOEntry for accelerometer Z axis
     /// @param cal          Calibration parameters (scale + offset)
     IMUWrapper(std::string name,
-               fc::pdo::PDOEntry& gyroXEntry, fc::pdo::PDOEntry& gyroYEntry, fc::pdo::PDOEntry& gyroZEntry,
-               fc::pdo::PDOEntry& accelXEntry, fc::pdo::PDOEntry& accelYEntry, fc::pdo::PDOEntry& accelZEntry,
+               dynamichardware::pdo::PDOEntry& gyroXEntry, dynamichardware::pdo::PDOEntry& gyroYEntry, dynamichardware::pdo::PDOEntry& gyroZEntry,
+               dynamichardware::pdo::PDOEntry& accelXEntry, dynamichardware::pdo::PDOEntry& accelYEntry, dynamichardware::pdo::PDOEntry& accelZEntry,
                const imu::ImuCalibration& cal) noexcept
         : name_(std::move(name))
         , gyroX_(gyroXEntry), gyroY_(gyroYEntry), gyroZ_(gyroZEntry)
@@ -62,12 +63,12 @@ private:
     std::string name_;
 
     // PDOEntry references (resolved at init, stable after freeze).
-    fc::pdo::PDOEntry& gyroX_;
-    fc::pdo::PDOEntry& gyroY_;
-    fc::pdo::PDOEntry& gyroZ_;
-    fc::pdo::PDOEntry& accelX_;
-    fc::pdo::PDOEntry& accelY_;
-    fc::pdo::PDOEntry& accelZ_;
+    dynamichardware::pdo::PDOEntry& gyroX_;
+    dynamichardware::pdo::PDOEntry& gyroY_;
+    dynamichardware::pdo::PDOEntry& gyroZ_;
+    dynamichardware::pdo::PDOEntry& accelX_;
+    dynamichardware::pdo::PDOEntry& accelY_;
+    dynamichardware::pdo::PDOEntry& accelZ_;
 
     const imu::ImuCalibration& cal_;
 };
@@ -78,12 +79,14 @@ private:
 inline imu::ImuRaw IMUWrapper::readRaw() const noexcept
 {
     imu::ImuRaw raw;
-    raw.gyroX  = static_cast<int16_t>(gyroX_.getGyroX() * 1000.0f);
-    raw.gyroY  = static_cast<int16_t>(gyroY_.getGyroY() * 1000.0f);
-    raw.gyroZ  = static_cast<int16_t>(gyroZ_.getGyroZ() * 1000.0f);
-    raw.accX   = static_cast<int16_t>(accelX_.getAccelX() * 1000.0f);
-    raw.accY   = static_cast<int16_t>(accelY_.getAccelY() * 1000.0f);
-    raw.accZ   = static_cast<int16_t>(accelZ_.getAccelZ() * 1000.0f);
+    // getFloat() returns raw sensor values as floats (rad/s for gyro, m/s² for accel)
+    // Scale by 1000 to match ImuRaw int16_t convention (milli-units)
+    raw.gyroX  = static_cast<int16_t>(gyroX_.getFloat() * 1000.0f);
+    raw.gyroY  = static_cast<int16_t>(gyroY_.getFloat() * 1000.0f);
+    raw.gyroZ  = static_cast<int16_t>(gyroZ_.getFloat() * 1000.0f);
+    raw.accX   = static_cast<int16_t>(accelX_.getFloat() * 1000.0f);
+    raw.accY   = static_cast<int16_t>(accelY_.getFloat() * 1000.0f);
+    raw.accZ   = static_cast<int16_t>(accelZ_.getFloat() * 1000.0f);
     return raw;
 }
 

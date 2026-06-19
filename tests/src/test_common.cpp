@@ -3,7 +3,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "dynamichardware/rt/VectorBuffer.h"
+#include "common/rt/ThreadBuffer.h"
 #include "common/config/Config.h"
 #include "dynamichardware/rt/SignalProcess.h"
 #include "common/messages/Message.h"

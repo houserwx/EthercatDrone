@@ -4,8 +4,8 @@
 #include "fc/safety/LineMonitor.h"
 #include "fc/app/FunctionEvaluator.h"
 #include "fc/app/WrapperPool.h"
-#include "fc/pdo/HardwareRegistry.h"
-#include "fc/grpc/GrpcAdapter.h"
+#include "dynamichardware/DynamicHardwareContext.h"
+#include "fc/grpc/GrpcWrapper.h"
 
 #include <atomic>
 #include <cstdint>
@@ -32,11 +32,11 @@ public:
     [[nodiscard]] std::string_view id()          const noexcept { return id_; }
     [[nodiscard]] std::string_view displayName() const noexcept { return displayName_; }
 
-    [[nodiscard]] fc::grpc::GrpcAdapter* grpcAdapter() noexcept { return grpcAdapter_; }
+    [[nodiscard]] fc::grpc::GrpcWrapper* grpcWrapper() noexcept { return grpcWrapper_; }
 
     [[nodiscard]] static std::unique_ptr<Queue>
-        loadFromJson(const std::string&          path,
-                     fc::pdo::HardwareRegistry& registry);
+        loadFromJson(const std::string&                   path,
+                     dynamichardware::DynamicHardwareContext* ctx);
 
     void saveToJson(const std::string& path) const;
     void freeze();
@@ -61,7 +61,7 @@ private:
     std::string id_;
     std::string displayName_;
     std::atomic<bool> running_{false};
-    fc::grpc::GrpcAdapter* grpcAdapter_{nullptr};
+    fc::grpc::GrpcWrapper* grpcWrapper_{nullptr};
 
     // Per-segment hardware vocabulary (default-constructed with reasonable sizes)
     WrapperPool pool_{std::string_view{"default"}, 8, 4, 0, 0, 0, 0, 0, 0};

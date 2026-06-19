@@ -7,14 +7,15 @@
 #include <thread>
 #include <chrono>
 
-#include "fc/pdo/PDO.h"
+#include "dynamichardware/pdo/PDO.h"
 #include "dynamichardware/rt/SignalProcess.h"
+#include "common/rt/ThreadBuffer.h"
 
 // ---- PDOEntry tests --------------------------------------------------------
 
-TEST_CASE("PDOEntry DigitalOutput setBool arms pulse", "[fc][pdo]") {
-    fc::pdo::PDOEntry entry;
-    entry.type = fc::pdo::EntryType::DigitalOutput;
+TEST_CASE("PDOEntry BoolOutput setBool arms pulse", "[fc][pdo]") {
+    dynamichardware::pdo::PDOEntry entry;
+    entry.type = dynamichardware::pdo::EntryType::BoolOutput;
     entry.bitLength = 1;
 
     uint8_t image[8] = {0};
@@ -22,7 +23,7 @@ TEST_CASE("PDOEntry DigitalOutput setBool arms pulse", "[fc][pdo]") {
     entry.byteOffset = 0;
     entry.bitOffset = 0;
 
-    // setBool on DigitalOutput arms the pulse machine
+    // setBool on BoolOutput arms the pulse machine
     entry.setBool(true);
     CHECK(entry.getBool());  // pulse is active
 
@@ -30,71 +31,75 @@ TEST_CASE("PDOEntry DigitalOutput setBool arms pulse", "[fc][pdo]") {
     CHECK(!entry.getBool());  // pulse cleared
 }
 
-TEST_CASE("PDOEntry DigitalInput getBool reads cached value", "[fc][pdo]") {
-    fc::pdo::PDOEntry entry;
-    entry.type = fc::pdo::EntryType::DigitalInput;
+TEST_CASE("PDOEntry BoolInput getBool reads cached value", "[fc][pdo]") {
+    dynamichardware::pdo::PDOEntry entry;
+    entry.type = dynamichardware::pdo::EntryType::BoolInput;
     entry.bitLength = 1;
 
-    // DigitalInput uses read() to populate boolVal_ from image
+    // BoolInput uses read() to populate boolVal_ from image
     // getBool() returns the cached boolVal_
     CHECK(!entry.getBool());  // default false
 }
 
-TEST_CASE("PDOEntry IMU gyro accessors", "[fc][pdo]") {
-    fc::pdo::PDOEntry entry;
-    entry.type = fc::pdo::EntryType::IMU_GyroX;
-    entry.bitLength = 16;
-
-    entry.setGyroX(1.23f);
-    CHECK(entry.getGyroX() == Catch::Approx(1.23f));
-
-    entry.setGyroY(4.56f);
-    CHECK(entry.getGyroY() == Catch::Approx(4.56f));
-
-    entry.setGyroZ(7.89f);
-    CHECK(entry.getGyroZ() == Catch::Approx(7.89f));
-}
-
-TEST_CASE("PDOEntry barometer accessors", "[fc][pdo]") {
-    fc::pdo::PDOEntry entry;
-    entry.type = fc::pdo::EntryType::Barometer;
-    entry.bitLength = 16;
-
-    entry.setBaroPressure(1013.25f);
-    CHECK(entry.getBaroPressure() == Catch::Approx(1013.25f));
-
-    entry.setBaroAltitude(150.0f);
-    CHECK(entry.getBaroAltitude() == Catch::Approx(150.0f));
-}
-
-TEST_CASE("PDOEntry magnetometer accessors", "[fc][pdo]") {
-    fc::pdo::PDOEntry entry;
-    entry.type = fc::pdo::EntryType::MagnetometerX;
-    entry.bitLength = 16;
-
-    entry.setMagX(0.2f);
-    CHECK(entry.getMagX() == Catch::Approx(0.2f));
-
-    entry.setMagY(-0.1f);
-    CHECK(entry.getMagY() == Catch::Approx(-0.1f));
-
-    entry.setMagZ(0.5f);
-    CHECK(entry.getMagZ() == Catch::Approx(0.5f));
-}
-
-TEST_CASE("PDOEntry float accessor", "[fc][pdo]") {
-    fc::pdo::PDOEntry entry;
-    entry.type = fc::pdo::EntryType::GPS_Latitude;
+TEST_CASE("PDOEntry FloatInput reads from process image", "[fc][pdo]") {
+    dynamichardware::pdo::PDOEntry entry;
+    entry.type = dynamichardware::pdo::EntryType::FloatInput;
     entry.bitLength = 32;
 
+    // FloatInput reads from process image via read().
+    // Simulate a sensor value written into the image buffer.
+    uint8_t image[64] = {0};
+    float sensorValue = 1.23f;
+    std::memcpy(image, &sensorValue, sizeof(float));
+
+    entry.image = image;
+    entry.byteOffset = 0;
+    entry.read();  // populate read-side cache from image
+
+    CHECK(entry.getFloat() == Catch::Approx(1.23f));
+
+    sensorValue = 4.56f;
+    std::memcpy(image, &sensorValue, sizeof(float));
+    entry.read();
+    CHECK(entry.getFloat() == Catch::Approx(4.56f));
+}
+
+TEST_CASE("PDOEntry FloatOutput setFloat/write round-trip", "[fc][pdo]") {
+    dynamichardware::pdo::PDOEntry entry;
+    entry.type = dynamichardware::pdo::EntryType::FloatOutput;
+    entry.bitLength = 32;
+
+    uint8_t image[64] = {0};
+    entry.image = image;
+    entry.byteOffset = 0;
+
     entry.setFloat(37.7749f);
-    CHECK(entry.getFloat() == Catch::Approx(37.7749f));
+    entry.write();  // write desired -> image
+    CHECK(*reinterpret_cast<float*>(image) == Catch::Approx(37.7749f));
+}
+
+TEST_CASE("PDOEntry Int16Input accessor", "[fc][pdo]") {
+    dynamichardware::pdo::PDOEntry entry;
+    entry.type = dynamichardware::pdo::EntryType::Int16Input;
+    entry.bitLength = 16;
+
+    // Int16Input reads from process image via read()
+    // getInt16() returns cached value
+    CHECK(entry.getInt16() == 0);  // default
+}
+
+TEST_CASE("PDOEntry Int32Input accessor", "[fc][pdo]") {
+    dynamichardware::pdo::PDOEntry entry;
+    entry.type = dynamichardware::pdo::EntryType::Int32Input;
+    entry.bitLength = 32;
+
+    CHECK(entry.getInt32() == 0);  // default
 }
 
 // ---- PulseMachine tests ----------------------------------------------------
 
 TEST_CASE("PulseMachine one-shot pulse", "[fc][pulse]") {
-    common::rt::PulseMachine pm;
+    dynamichardware::rt::PulseMachine pm;
     pm.configure(100);  // 100ms pulse
 
     uint64_t now = 0;
@@ -112,7 +117,7 @@ TEST_CASE("PulseMachine one-shot pulse", "[fc][pulse]") {
 }
 
 TEST_CASE("PulseMachine latched mode (no duration)", "[fc][pulse]") {
-    common::rt::PulseMachine pm;
+    dynamichardware::rt::PulseMachine pm;
     // No configure() call — latched mode (durationNs_ == 0)
 
     pm.arm(true, 0);
@@ -125,22 +130,22 @@ TEST_CASE("PulseMachine latched mode (no duration)", "[fc][pulse]") {
 // ---- SignalProcess tests ---------------------------------------------------
 
 TEST_CASE("SignalProcess nowNs returns increasing values", "[fc][signal]") {
-    auto t1 = common::rt::signalProcessTickNow();
+    auto t1 = dynamichardware::rt::signalProcessTickNow();
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    auto t2 = common::rt::signalProcessTickNow();
+    auto t2 = dynamichardware::rt::signalProcessTickNow();
     CHECK(t2 > t1);
 }
 
 // ---- HardwareCatalog tests -------------------------------------------------
 
-#include "fc/ethercat/HardwareCatalog.h"
+#include "dynamichardware/pdo/HardwareCatalog.h"
 #include <fstream>
 #include <filesystem>
 
 TEST_CASE("HardwareCatalog generate UUID format", "[fc][catalog]") {
     // generateUuid() is private, but we can test via addEntry
-    fc::pdo::HardwareCatalog catalog;
-    fc::pdo::CatalogEntry entry{
+    dynamichardware::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::CatalogEntry entry{
         "EC|00000002|00020001|REV00000001|POS0001|0600:01",
         "", "DigitalOutput", "EL2124[1] DO 0x0600:01",
         "EL2124", 1, 0x00020001u, 0x00000001u,
@@ -158,7 +163,7 @@ TEST_CASE("HardwareCatalog generate UUID format", "[fc][catalog]") {
 }
 
 TEST_CASE("HardwareCatalog registerEcChannel creates new entry", "[fc][catalog]") {
-    fc::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::HardwareCatalog catalog;
 
     const auto& entry = catalog.registerEcChannel(
         0x00000002u, // vendor
@@ -180,7 +185,7 @@ TEST_CASE("HardwareCatalog registerEcChannel creates new entry", "[fc][catalog]"
 }
 
 TEST_CASE("HardwareCatalog registerEcChannel reuses existing UUID", "[fc][catalog]") {
-    fc::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::HardwareCatalog catalog;
 
     const auto& entry1 = catalog.registerEcChannel(
         0x00000002u, 0x00020001u, 0x00000001u,
@@ -196,7 +201,7 @@ TEST_CASE("HardwareCatalog registerEcChannel reuses existing UUID", "[fc][catalo
 }
 
 TEST_CASE("HardwareCatalog findByUuid lookup", "[fc][catalog]") {
-    fc::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::HardwareCatalog catalog;
 
     const auto& entry = catalog.registerEcChannel(
         0x00000002u, 0x00020001u, 0x00000001u,
@@ -212,7 +217,7 @@ TEST_CASE("HardwareCatalog load and save", "[fc][catalog]") {
     namespace fs = std::filesystem;
     std::string path = fs::temp_directory_path() / "test_catalog.json";
 
-    fc::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::HardwareCatalog catalog;
     catalog.registerEcChannel(
         0x00000002u, 0x00020001u, 0x00000001u,
         1, 0x0600, 0x01, "DigitalOutput", "EL2124", true);
@@ -224,7 +229,7 @@ TEST_CASE("HardwareCatalog load and save", "[fc][catalog]") {
     CHECK(fs::exists(path));
 
     // Load into a new catalog
-    fc::pdo::HardwareCatalog catalog2;
+    dynamichardware::pdo::HardwareCatalog catalog2;
     CHECK(catalog2.load(path));
     CHECK(catalog2.entries().size() == 2);
 
@@ -237,7 +242,7 @@ TEST_CASE("HardwareCatalog load and save", "[fc][catalog]") {
 }
 
 TEST_CASE("HardwareCatalog load nonexistent file returns true", "[fc][catalog]") {
-    fc::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::HardwareCatalog catalog;
     // File absent on first run — should return true (fresh start)
     CHECK(catalog.load("/nonexistent/path/catalog.json"));
     CHECK(catalog.empty());
@@ -245,53 +250,53 @@ TEST_CASE("HardwareCatalog load nonexistent file returns true", "[fc][catalog]")
 
 // ---- HardwareRegistry tests ------------------------------------------------
 
-#include "fc/pdo/HardwareRegistry.h"
+#include "dynamichardware/pdo/HardwareRegistry.h"
 
 TEST_CASE("HardwareRegistry entryCount with no backends", "[fc][registry]") {
-    fc::pdo::HardwareRegistry registry;
+    dynamichardware::pdo::HardwareRegistry registry;
     CHECK(registry.entryCount() == 0);
     CHECK(registry.backendCount() == 0);
     CHECK(!registry.isFrozen());
 }
 
 TEST_CASE("HardwareRegistry lookupByUuid with empty uuid", "[fc][registry]") {
-    fc::pdo::HardwareRegistry registry;
+    dynamichardware::pdo::HardwareRegistry registry;
     CHECK(registry.lookupByUuid("") == nullptr);
 }
 
 // ---- SlaveTypeInfo tests ---------------------------------------------------
 
-#include "fc/ethercat/SlaveTypeInfo.h"
+#include "dynamichardware/backends/ethercat/SlaveTypeInfo.h"
 
 TEST_CASE("SlaveTypeInfo lookup known slave", "[fc][slavetype]") {
     // Beckhoff EL2124
-    auto* info = fc::ethercat::lookupSlaveType(0x00000002u, 0x00020001u);
+    auto* info = dynamichardware::ethercat::lookupSlaveType(0x00000002u, 0x00020001u);
     REQUIRE(info != nullptr);
     CHECK(std::string(info->type_name) == "EL2124");
     CHECK(info->vendor_id == 0x00000002u);
 }
 
 TEST_CASE("SlaveTypeInfo lookup unknown slave returns nullptr", "[fc][slavetype]") {
-    auto* info = fc::ethercat::lookupSlaveType(0x00009999u, 0x00990001u);
+    auto* info = dynamichardware::ethercat::lookupSlaveType(0x00009999u, 0x00990001u);
     CHECK(info == nullptr);
 }
 
 TEST_CASE("SlaveTypeInfo DC mode lookup for EL3632", "[fc][slavetype]") {
-    auto* info = fc::ethercat::lookupSlaveType(0x00000002u, 0x00050001u);
+    auto* info = dynamichardware::ethercat::lookupSlaveType(0x00000002u, 0x00050001u);
     REQUIRE(info != nullptr);
 
-    const auto* dc = fc::ethercat::lookupDcMode(info);
+    const auto* dc = dynamichardware::ethercat::lookupDcMode(info);
     REQUIRE(dc != nullptr);
     CHECK(dc->assign_activate == 0x0730u);
     CHECK(std::string(dc->name) == "DcSync");
 }
 
 TEST_CASE("SlaveTypeInfo DC mode lookup for EL2124 (free-run)", "[fc][slavetype]") {
-    auto* info = fc::ethercat::lookupSlaveType(0x00000002u, 0x00020001u);
+    auto* info = dynamichardware::ethercat::lookupSlaveType(0x00000002u, 0x00020001u);
     REQUIRE(info != nullptr);
 
     // EL2124 has FreeRun (assign_activate=0) — lookupDcMode returns first non-zero
-    const auto* dc = fc::ethercat::lookupDcMode(info);
+    const auto* dc = dynamichardware::ethercat::lookupDcMode(info);
     CHECK(dc == nullptr); // FreeRun has assign_activate=0, so no DC mode
 }
 
@@ -300,8 +305,7 @@ TEST_CASE("SlaveTypeInfo DC mode lookup for EL2124 (free-run)", "[fc][slavetype]
 // populating the HardwareCatalog with simulated entries, then initialize()
 // builds the PDO from those catalog entries.
 
-#include "fc/simulated/SimulatedAdapter.h"
-#include "fc/ethercat/HardwareCatalog.h"
+#include "dynamichardware/backends/simulated/SimulatedAdapter.h"
 #include <fstream>
 #include <nlohmann/json.hpp>
 
@@ -358,8 +362,8 @@ std::string writeSimDefinitionsPhysics(int cycleTimeUs,
 }
 
 // Helper: setup adapter from JSON definitions file
-void setupAdapterFromJson(fc::simulated::SimulatedAdapter& adapter,
-                          fc::pdo::HardwareCatalog& catalog,
+void setupAdapterFromJson(dynamichardware::simulated::SimulatedAdapter& adapter,
+                          dynamichardware::pdo::HardwareCatalog& catalog,
                           const std::string& jsonPath, int cycleTimeUs) {
     adapter.setCatalog(&catalog);
     adapter.loadDefinitions(jsonPath);
@@ -369,30 +373,30 @@ void setupAdapterFromJson(fc::simulated::SimulatedAdapter& adapter,
 } // namespace
 
 TEST_CASE("SimulatedAdapter initialize creates PDO entries", "[fc][sim]") {
-    fc::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::HardwareCatalog catalog;
     std::string jsonPath = writeSimDefinitions(500, {
         "do-0:DigitalOutput", "di-0:DigitalInput",
         "enc-0:Encoder", "ai-0:AnalogInput"
     });
 
-    fc::simulated::SimulatedAdapter adapter;
+    dynamichardware::simulated::SimulatedAdapter adapter;
     setupAdapterFromJson(adapter, catalog, jsonPath, 500);
     CHECK(adapter.getPDOs().size() == 1);
     CHECK(adapter.getPDOs()[0].entries.size() == 4);
 }
 
 TEST_CASE("SimulatedAdapter encoder simulation produces increasing counts", "[fc][sim]") {
-    fc::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::HardwareCatalog catalog;
     std::string jsonPath = writeSimDefinitions(500, {"enc-0:Encoder"});
 
-    fc::simulated::SimulatedAdapter adapter;
+    dynamichardware::simulated::SimulatedAdapter adapter;
     setupAdapterFromJson(adapter, catalog, jsonPath, 500);
 
     int64_t prevCount = 0;
     for (int i = 0; i < 100; ++i) {
         adapter.onBeforeReadInputs();
         adapter.getPDOs()[0].entries[0].read();
-        int64_t count = adapter.getPDOs()[0].entries[0].getCount();
+        int64_t count = static_cast<int64_t>(adapter.getPDOs()[0].entries[0].getInt32());
         CHECK(count >= prevCount);  // monotonically non-decreasing
         prevCount = count;
     }
@@ -400,10 +404,10 @@ TEST_CASE("SimulatedAdapter encoder simulation produces increasing counts", "[fc
 }
 
 TEST_CASE("SimulatedAdapter digital input simulation toggles", "[fc][sim]") {
-    fc::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::HardwareCatalog catalog;
     std::string jsonPath = writeSimDefinitions(500, {"di-0:DigitalInput"});
 
-    fc::simulated::SimulatedAdapter adapter;
+    dynamichardware::simulated::SimulatedAdapter adapter;
     setupAdapterFromJson(adapter, catalog, jsonPath, 500);
 
     bool sawHigh = false;
@@ -420,10 +424,10 @@ TEST_CASE("SimulatedAdapter digital input simulation toggles", "[fc][sim]") {
 }
 
 TEST_CASE("SimulatedAdapter digital output can be set and read", "[fc][sim]") {
-    fc::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::HardwareCatalog catalog;
     std::string jsonPath = writeSimDefinitions(500, {"do-0:DigitalOutput"});
 
-    fc::simulated::SimulatedAdapter adapter;
+    dynamichardware::simulated::SimulatedAdapter adapter;
     setupAdapterFromJson(adapter, catalog, jsonPath, 500);
 
     auto& entry = adapter.getPDOs()[0].entries[0];
@@ -434,12 +438,12 @@ TEST_CASE("SimulatedAdapter digital output can be set and read", "[fc][sim]") {
 }
 
 TEST_CASE("SimulatedAdapter full lifecycle initialize-read-write cycle", "[fc][sim]") {
-    fc::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::HardwareCatalog catalog;
     std::string jsonPath = writeSimDefinitions(500, {
         "do-0:DigitalOutput", "di-0:DigitalInput", "enc-0:Encoder"
     });
 
-    fc::simulated::SimulatedAdapter adapter;
+    dynamichardware::simulated::SimulatedAdapter adapter;
     setupAdapterFromJson(adapter, catalog, jsonPath, 500);
 
     for (int cycle = 0; cycle < 20; ++cycle) {
@@ -450,31 +454,31 @@ TEST_CASE("SimulatedAdapter full lifecycle initialize-read-write cycle", "[fc][s
 }
 
 TEST_CASE("SimulatedAdapter analog input produces static ADC value", "[fc][sim]") {
-    fc::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::HardwareCatalog catalog;
     std::string jsonPath = writeSimDefinitions(500, {"ai-0:AnalogInput"});
 
-    fc::simulated::SimulatedAdapter adapter;
+    dynamichardware::simulated::SimulatedAdapter adapter;
     setupAdapterFromJson(adapter, catalog, jsonPath, 500);
 
     adapter.onBeforeReadInputs();
     adapter.getPDOs()[0].entries[0].read();
-    int16_t adc = adapter.getPDOs()[0].entries[0].getRawAdc();
+    int16_t adc = adapter.getPDOs()[0].entries[0].getInt16();
     CHECK(adc == 0);  // default static ADC value
 }
 
 TEST_CASE("SimulatedAdapter physics-based encoder simulation", "[fc][sim]") {
-    fc::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::HardwareCatalog catalog;
     std::string jsonPath = writeSimDefinitionsPhysics(500,
         "enc-physics", "Encoder", 60.0f, 100.0f, 1024, true, 0.0f, 0.0f);
 
-    fc::simulated::SimulatedAdapter adapter;
+    dynamichardware::simulated::SimulatedAdapter adapter;
     setupAdapterFromJson(adapter, catalog, jsonPath, 500);
 
     int64_t prevCount = 0;
     for (int i = 0; i < 50; ++i) {
         adapter.onBeforeReadInputs();
         adapter.getPDOs()[0].entries[0].read();
-        int64_t count = adapter.getPDOs()[0].entries[0].getCount();
+        int64_t count = static_cast<int64_t>(adapter.getPDOs()[0].entries[0].getInt32());
         CHECK(count >= prevCount);
         prevCount = count;
     }
@@ -482,11 +486,11 @@ TEST_CASE("SimulatedAdapter physics-based encoder simulation", "[fc][sim]") {
 }
 
 TEST_CASE("SimulatedAdapter physics-based digital input simulation", "[fc][sim]") {
-    fc::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::HardwareCatalog catalog;
     std::string jsonPath = writeSimDefinitionsPhysics(500,
         "di-physics", "DigitalInput", 0.0f, 0.0f, 0, false, 600.0f, 5.0f);
 
-    fc::simulated::SimulatedAdapter adapter;
+    dynamichardware::simulated::SimulatedAdapter adapter;
     setupAdapterFromJson(adapter, catalog, jsonPath, 500);
 
     bool sawHigh = false;
@@ -559,17 +563,17 @@ TEST_CASE("RedundancyController role election with UDP loopback", "[fc][redundan
 #include "fc/wrapper/AnalogOutputWrapper.h"
 
 TEST_CASE("Integration: SimulatedAdapter + HardwareRegistry basic setup", "[fc][integration]") {
-    fc::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::HardwareCatalog catalog;
     std::string jsonPath = writeSimDefinitions(500, {
         "do-0:DigitalOutput", "di-0:DigitalInput"
     });
 
-    auto sim = std::make_unique<fc::simulated::SimulatedAdapter>();
+    auto sim = std::make_unique<dynamichardware::simulated::SimulatedAdapter>();
     sim->setCatalog(&catalog);
     sim->loadDefinitions(jsonPath);
     sim->setCycleTimeUs(500);
     CHECK(sim->initialize());
-    fc::pdo::HardwareRegistry registry;
+    dynamichardware::pdo::HardwareRegistry registry;
     registry.addBackend(std::move(sim));
     registry.buildUuidMap();
     registry.freezeForRt();
@@ -580,17 +584,17 @@ TEST_CASE("Integration: SimulatedAdapter + HardwareRegistry basic setup", "[fc][
 }
 
 TEST_CASE("Integration: SimulatedAdapter + HardwareRegistry readAll/writeAll cycle", "[fc][integration]") {
-    fc::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::HardwareCatalog catalog;
     std::string jsonPath = writeSimDefinitions(500, {
         "do-0:DigitalOutput", "di-0:DigitalInput", "enc-0:Encoder"
     });
 
-    auto sim = std::make_unique<fc::simulated::SimulatedAdapter>();
+    auto sim = std::make_unique<dynamichardware::simulated::SimulatedAdapter>();
     sim->setCatalog(&catalog);
     sim->loadDefinitions(jsonPath);
     sim->setCycleTimeUs(500);
     CHECK(sim->initialize());
-    fc::pdo::HardwareRegistry registry;
+    dynamichardware::pdo::HardwareRegistry registry;
     registry.addBackend(std::move(sim));
     registry.buildUuidMap();
     registry.freezeForRt();
@@ -606,22 +610,22 @@ TEST_CASE("Integration: SimulatedAdapter + HardwareRegistry readAll/writeAll cyc
     CHECK(doEntry != nullptr);
     CHECK(diEntry != nullptr);
     CHECK(encEntry != nullptr);
-    CHECK(encEntry->getCount() >= 0);
+    CHECK(encEntry->getInt32() >= 0);
 }
 
 TEST_CASE("Integration: SimulatedAdapter + HardwareRegistry + Wrappers full RT cycle", "[fc][integration]") {
-    fc::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::HardwareCatalog catalog;
     std::string jsonPath = writeSimDefinitions(500, {
         "do-0:DigitalOutput", "di-0:DigitalInput",
         "ai-0:AnalogInput", "ao-0:AnalogOutput"
     });
 
-    auto sim = std::make_unique<fc::simulated::SimulatedAdapter>();
+    auto sim = std::make_unique<dynamichardware::simulated::SimulatedAdapter>();
     sim->setCatalog(&catalog);
     sim->loadDefinitions(jsonPath);
     sim->setCycleTimeUs(500);
     CHECK(sim->initialize());
-    fc::pdo::HardwareRegistry registry;
+    dynamichardware::pdo::HardwareRegistry registry;
     registry.addBackend(std::move(sim));
     registry.buildUuidMap();
     registry.freezeForRt();
@@ -644,7 +648,7 @@ TEST_CASE("Integration: SimulatedAdapter + HardwareRegistry + Wrappers full RT c
     for (int cycle = 0; cycle < 20; ++cycle) {
         registry.readAll();
         bool diActive = diWrap.isActive();
-        int16_t adcVal = aiWrap.rawAdc();
+        int16_t adcVal = aiWrap.value();
         (void)adcVal;
         doWrap.setActive(diActive);
         lastDiState = diActive;
@@ -654,27 +658,27 @@ TEST_CASE("Integration: SimulatedAdapter + HardwareRegistry + Wrappers full RT c
 }
 
 TEST_CASE("Integration: Full RT cycle simulation with multiple backends", "[fc][integration]") {
-    fc::pdo::HardwareCatalog catalog1;
+    dynamichardware::pdo::HardwareCatalog catalog1;
     std::string jsonPath1 = writeSimDefinitions(500, {
         "seg1-do-0:DigitalOutput", "seg1-di-0:DigitalInput"
     });
-    auto sim1 = std::make_unique<fc::simulated::SimulatedAdapter>();
+    auto sim1 = std::make_unique<dynamichardware::simulated::SimulatedAdapter>();
     sim1->setCatalog(&catalog1);
     sim1->loadDefinitions(jsonPath1);
     sim1->setCycleTimeUs(500);
     CHECK(sim1->initialize());
 
-    fc::pdo::HardwareCatalog catalog2;
+    dynamichardware::pdo::HardwareCatalog catalog2;
     std::string jsonPath2 = writeSimDefinitions(500, {
         "seg2-enc-0:Encoder", "seg2-ai-0:AnalogInput"
     });
-    auto sim2 = std::make_unique<fc::simulated::SimulatedAdapter>();
+    auto sim2 = std::make_unique<dynamichardware::simulated::SimulatedAdapter>();
     sim2->setCatalog(&catalog2);
     sim2->loadDefinitions(jsonPath2);
     sim2->setCycleTimeUs(500);
     CHECK(sim2->initialize());
 
-    fc::pdo::HardwareRegistry registry;
+    dynamichardware::pdo::HardwareRegistry registry;
     registry.addBackend(std::move(sim1));
     registry.addBackend(std::move(sim2));
     registry.buildUuidMap();
@@ -692,7 +696,7 @@ TEST_CASE("Integration: Full RT cycle simulation with multiple backends", "[fc][
 // ---- Benchmark RT cycle timing (Item 27) ------------------------------------
 
 TEST_CASE("Benchmark: RT cycle timing with simulated load < 100us", "[fc][benchmark]") {
-    fc::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::HardwareCatalog catalog;
     std::vector<std::string> channels;
     for (int i = 0; i < 8; ++i) channels.push_back("virt-do-" + std::to_string(i) + ":DigitalOutput");
     for (int i = 0; i < 8; ++i) channels.push_back("virt-di-" + std::to_string(i) + ":DigitalInput");
@@ -700,12 +704,12 @@ TEST_CASE("Benchmark: RT cycle timing with simulated load < 100us", "[fc][benchm
     for (int i = 0; i < 4; ++i) channels.push_back("virt-ai-" + std::to_string(i) + ":AnalogInput");
 
     std::string jsonPath = writeSimDefinitions(500, channels);
-    auto sim = std::make_unique<fc::simulated::SimulatedAdapter>();
+    auto sim = std::make_unique<dynamichardware::simulated::SimulatedAdapter>();
     sim->setCatalog(&catalog);
     sim->loadDefinitions(jsonPath);
     sim->setCycleTimeUs(500);
     CHECK(sim->initialize());
-    fc::pdo::HardwareRegistry registry;
+    dynamichardware::pdo::HardwareRegistry registry;
     registry.addBackend(std::move(sim));
     registry.buildUuidMap();
     registry.freezeForRt();
@@ -733,18 +737,18 @@ TEST_CASE("Benchmark: RT cycle timing with simulated load < 100us", "[fc][benchm
 }
 
 TEST_CASE("Benchmark: RT cycle timing with wrapper overhead < 100us", "[fc][benchmark]") {
-    fc::pdo::HardwareCatalog catalog;
+    dynamichardware::pdo::HardwareCatalog catalog;
     std::vector<std::string> channels;
     for (int i = 0; i < 8; ++i) channels.push_back("virt-do-" + std::to_string(i) + ":DigitalOutput");
     for (int i = 0; i < 8; ++i) channels.push_back("virt-di-" + std::to_string(i) + ":DigitalInput");
 
     std::string jsonPath = writeSimDefinitions(500, channels);
-    auto sim = std::make_unique<fc::simulated::SimulatedAdapter>();
+    auto sim = std::make_unique<dynamichardware::simulated::SimulatedAdapter>();
     sim->setCatalog(&catalog);
     sim->loadDefinitions(jsonPath);
     sim->setCycleTimeUs(500);
     CHECK(sim->initialize());
-    fc::pdo::HardwareRegistry registry;
+    dynamichardware::pdo::HardwareRegistry registry;
     registry.addBackend(std::move(sim));
     registry.buildUuidMap();
     registry.freezeForRt();

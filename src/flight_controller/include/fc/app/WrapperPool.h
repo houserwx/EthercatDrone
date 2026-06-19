@@ -84,7 +84,7 @@ public:
     // -----------------------------------------------------------------------
 
     /// Register a digital output device. Returns stable index.
-    [[nodiscard]] int addOutput(std::string name, fc::pdo::PDOEntry& entry)
+    [[nodiscard]] int addOutput(std::string name, dynamichardware::pdo::PDOEntry& entry)
     {
         const int idx = static_cast<int>(outputs_.size());
         outputs_.emplace_back(std::move(name), entry);
@@ -92,7 +92,7 @@ public:
     }
 
     /// Register a digital input device. Returns stable index.
-    [[nodiscard]] int addInput(std::string name, fc::pdo::PDOEntry& entry)
+    [[nodiscard]] int addInput(std::string name, dynamichardware::pdo::PDOEntry& entry)
     {
         const int idx = static_cast<int>(inputs_.size());
         inputs_.emplace_back(std::move(name), entry);
@@ -100,7 +100,7 @@ public:
     }
 
     /// Register an analog input device. Returns stable index.
-    [[nodiscard]] int addAnalogInput(std::string name, fc::pdo::PDOEntry& entry)
+    [[nodiscard]] int addAnalogInput(std::string name, dynamichardware::pdo::PDOEntry& entry)
     {
         const int idx = static_cast<int>(analogInputs_.size());
         analogInputs_.emplace_back(std::move(name), entry);
@@ -108,23 +108,23 @@ public:
     }
 
     /// Register an analog output device. Returns stable index.
-    [[nodiscard]] int addAnalogOutput(std::string name, fc::pdo::PDOEntry& entry)
+    [[nodiscard]] int addAnalogOutput(std::string name, dynamichardware::pdo::PDOEntry& entry)
     {
         const int idx = static_cast<int>(analogOutputs_.size());
         analogOutputs_.emplace_back(std::move(name), entry);
         return idx;
     }
 
-    /// Register a message output channel (GrpcAdapter MessageOut entry).
-    [[nodiscard]] int addMsgOut(std::string name, fc::pdo::PDOEntry& entry)
+    /// Register a message output channel (GrpcWrapper MessageOut entry).
+    [[nodiscard]] int addMsgOut(std::string name, dynamichardware::pdo::PDOEntry& entry)
     {
         const int idx = static_cast<int>(msgOuts_.size());
         msgOuts_.emplace_back(std::move(name), entry);
         return idx;
     }
 
-    /// Register a message input channel (GrpcAdapter MessageIn entry).
-    [[nodiscard]] int addMsgIn(std::string name, fc::pdo::PDOEntry& entry)
+    /// Register a message input channel (GrpcWrapper MessageIn entry).
+    [[nodiscard]] int addMsgIn(std::string name, dynamichardware::pdo::PDOEntry& entry)
     {
         const int idx = static_cast<int>(msgIns_.size());
         msgIns_.emplace_back(std::move(name), entry);
@@ -133,8 +133,8 @@ public:
 
     /// Register an IMU wrapper. Returns stable index.
     [[nodiscard]] int addIMU(std::string name,
-                             fc::pdo::PDOEntry& gyroX, fc::pdo::PDOEntry& gyroY, fc::pdo::PDOEntry& gyroZ,
-                             fc::pdo::PDOEntry& accelX, fc::pdo::PDOEntry& accelY, fc::pdo::PDOEntry& accelZ,
+                             dynamichardware::pdo::PDOEntry& gyroX, dynamichardware::pdo::PDOEntry& gyroY, dynamichardware::pdo::PDOEntry& gyroZ,
+                             dynamichardware::pdo::PDOEntry& accelX, dynamichardware::pdo::PDOEntry& accelY, dynamichardware::pdo::PDOEntry& accelZ,
                              const imu::ImuCalibration& cal)
     {
         const int idx = static_cast<int>(imus_.size());
@@ -144,7 +144,7 @@ public:
 
     /// Register a magnetometer wrapper. Returns stable index.
     [[nodiscard]] int addMagnetometer(std::string name,
-                                      fc::pdo::PDOEntry& magX, fc::pdo::PDOEntry& magY, fc::pdo::PDOEntry& magZ)
+                                      dynamichardware::pdo::PDOEntry& magX, dynamichardware::pdo::PDOEntry& magY, dynamichardware::pdo::PDOEntry& magZ)
     {
         const int idx = static_cast<int>(magnetometers_.size());
         magnetometers_.emplace_back(std::move(name), magX, magY, magZ);
@@ -152,7 +152,7 @@ public:
     }
 
     /// Register a barometer wrapper. Returns stable index.
-    [[nodiscard]] int addBarometer(std::string name, fc::pdo::PDOEntry& pressure)
+    [[nodiscard]] int addBarometer(std::string name, dynamichardware::pdo::PDOEntry& pressure)
     {
         const int idx = static_cast<int>(barometers_.size());
         barometers_.emplace_back(std::move(name), pressure);
@@ -161,9 +161,9 @@ public:
 
     /// Register a GPS wrapper. Returns stable index.
     [[nodiscard]] int addGPS(std::string name,
-                             fc::pdo::PDOEntry& latitude, fc::pdo::PDOEntry& longitude,
-                             fc::pdo::PDOEntry& altitude, fc::pdo::PDOEntry& heading,
-                             fc::pdo::PDOEntry& fixQuality)
+                             dynamichardware::pdo::PDOEntry& latitude, dynamichardware::pdo::PDOEntry& longitude,
+                             dynamichardware::pdo::PDOEntry& altitude, dynamichardware::pdo::PDOEntry& heading,
+                             dynamichardware::pdo::PDOEntry& fixQuality)
     {
         const int idx = static_cast<int>(gps_.size());
         gps_.emplace_back(std::move(name), latitude, longitude, altitude, heading, fixQuality);
@@ -248,7 +248,7 @@ public:
             out.setActive(false);
         }
         for (auto& out : analogOutputs_) {
-            out.setAdc(0);
+            out.setValue(0);
         }
     }
 

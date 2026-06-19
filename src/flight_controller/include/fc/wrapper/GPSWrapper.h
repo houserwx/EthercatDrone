@@ -1,6 +1,6 @@
 #pragma once
 
-#include "fc/pdo/PDO.h"
+#include "dynamichardware/pdo/PDO.h"
 #include "common/math/Math.h"
 
 #include <cstdint>
@@ -9,9 +9,8 @@
 // ============================================================
 // GPSWrapper — typed accessor for GPS/GNSS PDOEntries.
 //
-// Holds stable PDOEntry& references resolved once at init time
-// via HardwareRegistry::lookupByUuid().  In the RT loop each
-// accessor is a single struct member read — zero lookup,
+// Holds stable PDOEntry& references resolved once at init time.
+// In the RT loop each accessor is a single struct member read — zero lookup,
 // zero virtual dispatch.
 //
 // GPS devices sit on the other side of a backend (UART NMEA,
@@ -34,9 +33,9 @@ public:
     /// @param heading     PDOEntry for heading (degrees true, float)
     /// @param fixQuality  PDOEntry for fix quality (0=none, 1=GPS, 2=DGPS, int16)
     GPSWrapper(std::string name,
-               fc::pdo::PDOEntry& latitude, fc::pdo::PDOEntry& longitude,
-               fc::pdo::PDOEntry& altitude, fc::pdo::PDOEntry& heading,
-               fc::pdo::PDOEntry& fixQuality) noexcept
+               dynamichardware::pdo::PDOEntry& latitude, dynamichardware::pdo::PDOEntry& longitude,
+               dynamichardware::pdo::PDOEntry& altitude, dynamichardware::pdo::PDOEntry& heading,
+               dynamichardware::pdo::PDOEntry& fixQuality) noexcept
         : name_(std::move(name))
         , latitude_(latitude), longitude_(longitude)
         , altitude_(altitude), heading_(heading)
@@ -68,11 +67,11 @@ private:
     std::string name_;
 
     // PDOEntry references (resolved at init, stable after freeze).
-    fc::pdo::PDOEntry& latitude_;
-    fc::pdo::PDOEntry& longitude_;
-    fc::pdo::PDOEntry& altitude_;
-    fc::pdo::PDOEntry& heading_;
-    fc::pdo::PDOEntry& fixQuality_;
+    dynamichardware::pdo::PDOEntry& latitude_;
+    dynamichardware::pdo::PDOEntry& longitude_;
+    dynamichardware::pdo::PDOEntry& altitude_;
+    dynamichardware::pdo::PDOEntry& heading_;
+    dynamichardware::pdo::PDOEntry& fixQuality_;
 };
 
 // ---------------------------------------------------------------------------
@@ -99,7 +98,7 @@ inline float GPSWrapper::heading() const noexcept
 
 inline uint8_t GPSWrapper::fixQuality() const noexcept
 {
-    return static_cast<uint8_t>(fixQuality_.getRawAdc());
+    return static_cast<uint8_t>(fixQuality_.getInt16());
 }
 
 inline bool GPSWrapper::hasFix() const noexcept

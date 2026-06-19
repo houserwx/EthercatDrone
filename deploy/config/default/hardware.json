@@ -1,5 +1,5 @@
 {
-  "cycleTimeUs": 500,
+  "cycleTimeUs": 1000,
   "hardwareCatalogPath": "config/shared/hardware_catalog.json",
   "hardwareConfiguration": {
     "encoders": [],
